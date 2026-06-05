@@ -599,7 +599,8 @@
 
             <div class="mb-3">
               <label for="reportName" class="form-label">ชื่อเอกสาร <span class="text-danger">*</span></label>
-              <input type="text" class="form-control" id="reportName" required placeholder="โปรดระบุรายละเอียดเอกสารให้ชัดเจน เช่น รายงานผลการดำเนินงาน...">
+              <input type="text" class="form-control" id="reportName" required placeholder="เช่น รายงานผลการดำเนินกิจกรรม..., บันทึกข้อความชี้แจงไม่ดำเนินกิจกรรม..., หรือ เอกสาร...">
+              <div class="form-text">ชื่อเอกสารต้องขึ้นต้นด้วย “รายงานผลการดำเนินกิจกรรม...” หรือ “บันทึกข้อความชี้แจงไม่ดำเนินกิจกรรม...” หรือ “เอกสาร...” เท่านั้น</div>
             </div>
 
             <div class="mb-3">
@@ -1287,6 +1288,39 @@
       return emailPattern.test(email);
     }
 
+    const REPORT_NAME_ALLOWED_PREFIXES = [
+      'รายงานผลการดำเนินกิจกรรม',
+      'บันทึกข้อความชี้แจงไม่ดำเนินกิจกรรม',
+      'เอกสาร'
+    ];
+
+    function isValidReportNamePrefix(reportName) {
+      const value = (reportName || '').toString().trim();
+      return REPORT_NAME_ALLOWED_PREFIXES.some(prefix => value.startsWith(prefix));
+    }
+
+    function showReportNamePrefixWarning() {
+      Swal.fire({
+        icon: 'warning',
+        title: 'ชื่อเอกสารไม่ถูกต้อง',
+        html: `
+          <div class="text-start" style="font-size:0.95rem; line-height:1.7;">
+            <div>กรุณาระบุชื่อเอกสารให้ขึ้นต้นด้วยอย่างใดอย่างหนึ่งต่อไปนี้:</div>
+            <ol class="mb-2 mt-2">
+              <li>รายงานผลการดำเนินกิจกรรม...</li>
+              <li>บันทึกข้อความชี้แจงไม่ดำเนินกิจกรรม...</li>
+              <li>เอกสาร...</li>
+            </ol>
+            <div class="small text-muted">ตัวอย่าง: รายงานผลการดำเนินกิจกรรมพัฒนาทักษะภาษาอังกฤษ</div>
+          </div>
+        `,
+        confirmButtonColor: '#d63031'
+      }).then(() => {
+        const reportNameInput = document.getElementById('reportName');
+        if (reportNameInput) reportNameInput.focus();
+      });
+    }
+
     function shouldHideDashboardColumn(headerText) {
       const text = (headerText || '').toString().toLowerCase();
       return text.includes('email') ||
@@ -1356,6 +1390,11 @@
 
       if (!reportName || !activityName || !adminGroup || !workGroup || !responsiblePerson || !actionPlanProject || !email) {
         Swal.fire({icon: 'warning', title: 'กรุณากรอกข้อมูลให้ครบทุกช่อง', showConfirmButton: true});
+        return;
+      }
+
+      if (!isValidReportNamePrefix(reportName)) {
+        showReportNamePrefixWarning();
         return;
       }
 

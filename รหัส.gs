@@ -2,6 +2,11 @@ var sheetName = 'ReportNo';
 var reportSubmitSheetName = 'ReportSubmit';
 var reportNoActivityNameColumn = 12; // L: ชื่อกิจกรรม (เพิ่มท้ายตารางเพื่อไม่กระทบคอลัมน์ A-K เดิม)
 var reportNoActivityNameHeader = 'ชื่อกิจกรรม';
+var reportNameAllowedPrefixes = [
+  'รายงานผลการดำเนินกิจกรรม',
+  'บันทึกข้อความชี้แจงไม่ดำเนินกิจกรรม',
+  'เอกสาร'
+];
 var scriptProp = PropertiesService.getScriptProperties();
 
 function initialSetup() {
@@ -31,6 +36,17 @@ function getSpreadsheet_() {
     throw new Error('System Error: ยังไม่ได้ตั้งค่า Script Properties ชื่อ key กรุณารัน initialSetup() ก่อนใช้งาน');
   }
   return SpreadsheetApp.openById(key);
+}
+
+function isValidReportNamePrefix_(reportName) {
+  var value = String(reportName || '').trim();
+  return reportNameAllowedPrefixes.some(function(prefix) {
+    return value.indexOf(prefix) === 0;
+  });
+}
+
+function getReportNamePrefixErrorMessage_() {
+  return 'ชื่อเอกสารไม่ถูกต้อง กรุณาระบุชื่อเอกสารให้ขึ้นต้นด้วย "รายงานผลการดำเนินกิจกรรม" หรือ "บันทึกข้อความชี้แจงไม่ดำเนินกิจกรรม" หรือ "เอกสาร" เท่านั้น';
 }
 
 function ensureReportNoActivityNameColumn_(sheet) {
@@ -442,6 +458,10 @@ function saveData(reportName, adminGroup, workGroup, responsiblePerson, actionPl
 
   if (!reportName || !adminGroup || !workGroup || !responsiblePerson || !actionPlanProject || !email) {
     throw new Error('กรุณากรอกข้อมูลให้ครบทุกช่อง');
+  }
+
+  if (!isValidReportNamePrefix_(reportName)) {
+    throw new Error(getReportNamePrefixErrorMessage_());
   }
 
   if (activityCode) {
