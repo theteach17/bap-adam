@@ -7,42 +7,323 @@ function initialSetup() {
   scriptProp.setProperty('key', activeSpreadsheet.getId());
 }
 
-// ==========================================
-// [EDITED] ฟังก์ชันแก้ไข: ทำระบบดักจับข้อผิดพลาดและดึงค่าตั้งค่า
-// ==========================================
-function doGet(e) {
-  try {
-    var page = e.parameter.page || 'Login';
-    var settings = getGlobalSettings();
-    var webTitle = settings['WEB_TITLE'] || 'ศูนย์สารสนเทศกลาง KIC';
-    var logoUrl = settings['LOGO_URL'] || 'https://img2.pic.in.th/pic/logofd3322a65d133ac4.png';
+// =========================================================================
+// [SECURITY PATCH] Session / Auth Guard สำหรับ Web App ที่ใช้งานจริง
+// จุดประสงค์:
+// 1) ป้องกันการเปิด Index.html โดยตรงผ่าน ?page=Index โดยไม่ได้ login
+// 2) ตรวจสิทธิ์ซ้ำในทุก server-side function ที่อ่าน/เขียนข้อมูล
+// 3) ไม่เปลี่ยน UI / คำบนหน้าเว็บ / workflow เดิมของผู้ใช้
+// 4) ไม่เปลี่ยน deployment executeAs/access เดิม เพื่อลดผลกระทบต่อระบบจริง
+// =========================================================================
+var SESSION_SHEET_NAME = 'Sessions';
+var SESSION_DURATION_MINUTES = 8 * 60; // 8 ชั่วโมงต่อการเข้าสู่ระบบ 1 ครั้ง
+var SESSION_TOUCH_INTERVAL_MINUTES = 5; // ลดการเขียน LastSeenAt ถี่เกินไป
+var PUBLIC_PAGES = ['Login'];
+var PROTECTED_PAGES = ['Index'];
+var DEFAULT_WEB_TITLE = 'ศูนย์สารสนเทศกลาง KIC';
+var DEFAULT_LOGO_URL = 'https://img2.pic.in.th/pic/logofd3322a65d133ac4.png';
 
-    return HtmlService.createHtmlOutputFromFile(page)
-      .setTitle(webTitle)
-      .setFaviconUrl(logoUrl)
-      //.addMetaTag('viewport', 'width=device-width, initial-scale=1')
-      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
-  } catch (error) {
-    return ContentService.createTextOutput("เกิดข้อผิดพลาดในการโหลดระบบ: ไม่พบไฟล์หน้าเว็บ " + (e.parameter.page || 'Login') + " หรือ " + error.message);
+function getSpreadsheet_() {
+  var key = scriptProp.getProperty('key');
+  if (!key) {
+    throw new Error('System Error: ยังไม่ได้ตั้งค่า Script Properties ชื่อ key กรุณารัน initialSetup() ก่อนใช้งาน');
+  }
+  return SpreadsheetApp.openById(key);
+}
+
+function getCurrentUserKey_() {
+  var key = Session.getTemporaryActiveUserKey();
+  if (!key) {
+    throw new Error('ไม่สามารถระบุตัวตนผู้ใช้งานได้ กรุณาเข้าสู่ระบบด้วยบัญชี Google ในโดเมนโรงเรียน แล้วลองใหม่อีกครั้ง');
+  }
+  return key;
+}
+
+function hashString_(value) {
+  var raw = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, String(value), Utilities.Charset.UTF_8);
+  return raw.map(function(byte) {
+    var v = byte < 0 ? byte + 256 : byte;
+    return ('0' + v.toString(16)).slice(-2);
+  }).join('');
+}
+
+function parseBoolean_(value) {
+  return value === true || String(value).toUpperCase() === 'TRUE';
+}
+
+function ensureSessionsSheet_() {
+  var ss = getSpreadsheet_();
+  var sheet = ss.getSheetByName(SESSION_SHEET_NAME);
+  if (sheet) return sheet;
+
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) {
+    throw new Error('ระบบกำลังเตรียมชีต Sessions โปรดลองใหม่อีกครั้ง');
+  }
+
+  try {
+    sheet = ss.getSheetByName(SESSION_SHEET_NAME);
+    if (!sheet) {
+      sheet = ss.insertSheet(SESSION_SHEET_NAME);
+      sheet.getRange(1, 1, 1, 11).setValues([[
+        'SessionIdHash',
+        'UserKeyHash',
+        'Username',
+        'DisplayName',
+        'LoginAt',
+        'LastSeenAt',
+        'ExpiresAt',
+        'Active',
+        'LogoutAt',
+        'LastAction',
+        'LoginRedirectPending'
+      ]]);
+      sheet.setFrozenRows(1);
+    }
+    return sheet;
+  } finally {
+    lock.releaseLock();
   }
 }
 
+function buildSessionRecord_(row, rowNumber) {
+  return {
+    rowNumber: rowNumber,
+    sessionIdHash: row[0],
+    userKeyHash: row[1],
+    username: row[2],
+    displayName: row[3],
+    loginAt: row[4],
+    lastSeenAt: row[5],
+    expiresAt: row[6],
+    active: parseBoolean_(row[7]),
+    logoutAt: row[8],
+    lastAction: row[9],
+    loginRedirectPending: parseBoolean_(row[10])
+  };
+}
+
+function deactivateSessionsForUserKey_(sheet, userKeyHash, exceptRowNumber) {
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) return;
+  var values = sheet.getRange(2, 1, lastRow - 1, 11).getValues();
+  var now = new Date();
+  values.forEach(function(row, index) {
+    var rowNumber = index + 2;
+    if (rowNumber === exceptRowNumber) return;
+    if (row[1] === userKeyHash && parseBoolean_(row[7])) {
+      sheet.getRange(rowNumber, 8).setValue(false); // Active
+      sheet.getRange(rowNumber, 9).setValue(now);   // LogoutAt
+      sheet.getRange(rowNumber, 10).setValue('replaced_by_new_login');
+      sheet.getRange(rowNumber, 11).setValue(false);
+    }
+  });
+}
+
+function createSession_(username, displayName) {
+  var userKey = getCurrentUserKey_();
+  var userKeyHash = hashString_(userKey);
+  var sessionId = Utilities.getUuid() + ':' + new Date().getTime() + ':' + userKey;
+  var sessionIdHash = hashString_(sessionId);
+  var now = new Date();
+  var expiresAt = new Date(now.getTime() + SESSION_DURATION_MINUTES * 60 * 1000);
+  var sheet = ensureSessionsSheet_();
+
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) {
+    throw new Error('ระบบกำลังประมวลผลการเข้าสู่ระบบหลายรายการ โปรดลองใหม่อีกครั้ง');
+  }
+
+  try {
+    deactivateSessionsForUserKey_(sheet, userKeyHash, null);
+    sheet.appendRow([
+      sessionIdHash,
+      userKeyHash,
+      username,
+      displayName,
+      now,
+      now,
+      expiresAt,
+      true,
+      '',
+      'login',
+      true // LoginRedirectPending: ใช้รองรับ Login.html เดิมที่เรียก getWebAppUrl() หลัง login สำเร็จ
+    ]);
+  } finally {
+    lock.releaseLock();
+  }
+
+  return sessionIdHash;
+}
+
+function getActiveSession_(options) {
+  options = options || {};
+  var userKey;
+  try {
+    userKey = getCurrentUserKey_();
+  } catch (e) {
+    return { valid: false, reason: e.message };
+  }
+
+  var userKeyHash = hashString_(userKey);
+  var sheet = ensureSessionsSheet_();
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) return { valid: false, reason: 'no_session' };
+
+  var values = sheet.getRange(2, 1, lastRow - 1, 11).getValues();
+  var now = new Date();
+  var foundExpiredRow = null;
+
+  for (var i = values.length - 1; i >= 0; i--) {
+    var session = buildSessionRecord_(values[i], i + 2);
+    if (session.userKeyHash !== userKeyHash) continue;
+    if (!session.active) continue;
+
+    var expiresAt = session.expiresAt ? new Date(session.expiresAt) : null;
+    if (!expiresAt || expiresAt.getTime() <= now.getTime()) {
+      foundExpiredRow = session.rowNumber;
+      break;
+    }
+
+    if (options.touch) {
+      var shouldTouch = true;
+      if (session.lastSeenAt) {
+        var lastSeenAt = new Date(session.lastSeenAt);
+        shouldTouch = (now.getTime() - lastSeenAt.getTime()) >= SESSION_TOUCH_INTERVAL_MINUTES * 60 * 1000;
+      }
+      if (shouldTouch) {
+        sheet.getRange(session.rowNumber, 6).setValue(now); // LastSeenAt
+        sheet.getRange(session.rowNumber, 10).setValue(options.action || 'activity'); // LastAction
+      }
+    }
+
+    session.valid = true;
+    session.sheet = sheet;
+    return session;
+  }
+
+  if (foundExpiredRow) {
+    sheet.getRange(foundExpiredRow, 8).setValue(false); // Active
+    sheet.getRange(foundExpiredRow, 9).setValue(now);   // LogoutAt
+    sheet.getRange(foundExpiredRow, 10).setValue('expired');
+    sheet.getRange(foundExpiredRow, 11).setValue(false);
+  }
+
+  return { valid: false, reason: 'expired_or_not_found' };
+}
+
+function requireAuth_(action) {
+  var session = getActiveSession_({ touch: true, action: action || 'server_function' });
+  if (!session.valid) {
+    throw new Error('Unauthorized: กรุณาเข้าสู่ระบบใหม่อีกครั้ง');
+  }
+  return session;
+}
+
+function invalidateCurrentSession_(reason) {
+  var session = getActiveSession_({ touch: false });
+  if (!session.valid || !session.sheet || !session.rowNumber) return false;
+  var now = new Date();
+  session.sheet.getRange(session.rowNumber, 8).setValue(false); // Active
+  session.sheet.getRange(session.rowNumber, 9).setValue(now);   // LogoutAt
+  session.sheet.getRange(session.rowNumber, 10).setValue(reason || 'logout');
+  session.sheet.getRange(session.rowNumber, 11).setValue(false);
+  return true;
+}
+
+function consumeLoginRedirectIfNeeded_() {
+  var session = getActiveSession_({ touch: true, action: 'login_redirect' });
+  if (!session.valid || !session.sheet || !session.rowNumber) return false;
+  if (session.loginRedirectPending) {
+    session.sheet.getRange(session.rowNumber, 11).setValue(false);
+    return true;
+  }
+  return false;
+}
+
+function renderPage_(page) {
+  var settings = {};
+  try {
+    settings = getGlobalSettings();
+  } catch (e) {
+    Logger.log('getGlobalSettings failed in renderPage_: ' + e.message);
+  }
+  var webTitle = settings['WEB_TITLE'] || DEFAULT_WEB_TITLE;
+  var logoUrl = settings['LOGO_URL'] || DEFAULT_LOGO_URL;
+
+  return HtmlService.createHtmlOutputFromFile(page)
+    .setTitle(webTitle)
+    .setFaviconUrl(logoUrl)
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+}
+
+
+// ==========================================
+// [EDITED] ฟังก์ชันแก้ไข: ทำระบบดักจับข้อผิดพลาดและดึงค่าตั้งค่า
+// ==========================================
+
+function doGet(e) {
+  try {
+    e = e || { parameter: {} };
+    var requestedPage = (e.parameter && e.parameter.page) ? String(e.parameter.page) : 'Login';
+
+    // Allowlist เท่านั้น: ไม่เปิดไฟล์ HTML จาก parameter โดยตรง
+    if (PUBLIC_PAGES.indexOf(requestedPage) !== -1) {
+      return renderPage_(requestedPage);
+    }
+
+    if (PROTECTED_PAGES.indexOf(requestedPage) !== -1) {
+      var session = getActiveSession_({ touch: true, action: 'open_' + requestedPage });
+      if (!session.valid) {
+        return renderPage_('Login');
+      }
+      return renderPage_(requestedPage);
+    }
+
+    // หน้าใดที่ไม่อยู่ใน allowlist ให้กลับ Login เสมอ
+    return renderPage_('Login');
+  } catch (error) {
+    Logger.log('doGet error: ' + error.message);
+    return ContentService.createTextOutput('เกิดข้อผิดพลาดในการโหลดระบบ: ' + error.message);
+  }
+}
+
+
+
 function checkLogin(username, password) {
-  const ss = SpreadsheetApp.openById(scriptProp.getProperty('key'));
+  username = (username || '').toString().trim();
+  password = (password || '').toString();
+
+  if (!username || !password) {
+    logAction(username || 'unknown', 'เข้าสู่ระบบ', 'ล้มเหลว', 'missing_username_or_password');
+    return { success: false, name: '' };
+  }
+
+  const ss = getSpreadsheet_();
   const sheet = ss.getSheetByName('Credential');
+  if (!sheet) {
+    throw new Error("System Error: ไม่พบแผ่นงานชื่อ 'Credential'");
+  }
+
   const data = sheet.getDataRange().getValues();
   let loginSuccess = false;
   let name = '';
   for (let i = 0; i < data.length; i++) {
-    if (data[i][0] === username && data[i][1] === password) {
+    if (String(data[i][0]) === username && String(data[i][1]) === password) {
       loginSuccess = true;
-      name = data[i][4]; 
+      name = data[i][4] || username;
       break;
     }
   }
+
+  if (loginSuccess) {
+    createSession_(username, name);
+  }
+
   logAction(username, 'เข้าสู่ระบบ', loginSuccess ? 'สำเร็จ' : 'ล้มเหลว', name);
   return { success: loginSuccess, name: name };
 }
+
 
 function logAction(username, action, result, documentNumberOrProjectName = '') {
   try {
@@ -62,16 +343,22 @@ function logAction(username, action, result, documentNumberOrProjectName = '') {
   }
 }
 
+
 function getData(search, limit, page) {
-  var spreadsheet = SpreadsheetApp.openById(scriptProp.getProperty('key'));
-  var sheet = spreadsheet.getSheetByName(sheetName); 
+  requireAuth_('getData');
+  var spreadsheet = getSpreadsheet_();
+  var sheet = spreadsheet.getSheetByName(sheetName);
   if (!sheet) {
     Logger.log("Error: Sheet '" + sheetName + "' not found.");
     return { headers: [], data: [], total: 0 };
   }
+  search = (search || '').toString().toLowerCase();
+  limit = parseInt(limit, 10) || 10;
+  page = parseInt(page, 10) || 1;
+
   var data = sheet.getDataRange().getValues();
   var headers = data.shift();
-  var filteredData = data.filter(row => row.some(cell => cell.toString().toLowerCase().includes(search.toLowerCase())));
+  var filteredData = data.filter(row => row.some(cell => cell.toString().toLowerCase().includes(search)));
   var nonEmptyRows = filteredData.filter(row => row.some(cell => cell.toString().trim() !== ""));
   nonEmptyRows.reverse();
   var startIndex = (page - 1) * limit;
@@ -80,170 +367,165 @@ function getData(search, limit, page) {
   return { headers: headers, data: pageData, total: nonEmptyRows.length };
 }
 
+
+
 function getDocumentData(documentNumber) {
-  var spreadsheet = SpreadsheetApp.openById(scriptProp.getProperty('key'));
+  requireAuth_('getDocumentData');
+  var spreadsheet = getSpreadsheet_();
   var sheet = spreadsheet.getSheetByName(sheetName);
+  if (!sheet) return null;
   var data = sheet.getDataRange().getValues();
-  data.shift(); 
+  data.shift();
   for (var i = 0; i < data.length; i++) {
-    if (data[i][1] === documentNumber) { 
+    if (data[i][1] === documentNumber) {
       return {
-        reportName:        data[i][2],  // C
-        adminGroup:        data[i][3],  // D
-        workGroup:         data[i][4],  // E
-        responsiblePerson: data[i][5],  // F
-        actionPlanProject: data[i][8],  // I
-        email:             data[i][9],  // J
-        activityCode:      data[i][10]  // K
+        reportName: data[i][2], // C
+        adminGroup: data[i][3], // D
+        workGroup: data[i][4], // E
+        responsiblePerson: data[i][5], // F
+        actionPlanProject: data[i][8], // I
+        email: data[i][9], // J
+        activityCode: data[i][10] // K
       };
     }
   }
   return null;
 }
 
+
 // =========================================================================
 // [EDITED] 1. ฟังก์ชันขอเลขทะเบียนเอกสาร
 // =========================================================================
+
 function saveData(reportName, adminGroup, workGroup, responsiblePerson, actionPlanProject, email, activityCode, loggedUser) {
-  // 1. ขอ Lock จาก Script
+  var session = requireAuth_('saveData');
+  var auditUser = session.displayName || session.username || responsiblePerson || loggedUser;
+
   const lock = LockService.getScriptLock();
-  
-  // 2. พยายาม Lock (รอสูงสุด 30 วินาที)
-  if (!lock.tryLock(30000)) { 
+  if (!lock.tryLock(30000)) {
     throw new Error('ระบบกำลังประมวลผลคำขออื่น โปรดรอสักครู่แล้วลองใหม่อีกครั้ง (Server is busy)');
   }
 
   try {
-    var ss = SpreadsheetApp.openById(scriptProp.getProperty('key'));
+    var ss = getSpreadsheet_();
     var sheet = ss.getSheetByName(sheetName);
-    
-    // --- CRITICAL SECTION START ---
-    // (ส่วนนี้จะมีเพียง 1 User ที่ทำงานได้ ณ เวลาใดเวลาหนึ่ง)
+    if (!sheet) throw new Error("System Error: ไม่พบแผ่นงานชื่อ '" + sheetName + "'");
 
-    // 3. ใช้ตรรกะเดิมของคุณเพื่อหาแถวว่างถัดไป (ซึ่งตอนนี้ปลอดภัยแล้ว)
+    // คงตรรกะเดิม: หาตำแหน่งแถวใหม่จากคอลัมน์ C เพื่อไม่กระทบสูตรเลขทะเบียนในชีต
     var lastRow = sheet.getRange("C:C").getValues().filter(String).length;
     var newRow = lastRow + 1;
 
-    // 4. เขียนข้อมูลลงในแถวที่หาได้
-    sheet.getRange(newRow, 3).setValue(reportName);        // C
-    sheet.getRange(newRow, 4).setValue(adminGroup);        // D
-    sheet.getRange(newRow, 5).setValue(workGroup);         // E
+    sheet.getRange(newRow, 3).setValue(reportName); // C
+    sheet.getRange(newRow, 4).setValue(adminGroup); // D
+    sheet.getRange(newRow, 5).setValue(workGroup); // E
     sheet.getRange(newRow, 6).setValue(responsiblePerson); // F
     sheet.getRange(newRow, 9).setValue(actionPlanProject); // I
-    sheet.getRange(newRow,10).setValue(email);             // J
-    sheet.getRange(newRow,11).setValue( (activityCode || '').toString().trim().toUpperCase() ); // K
-    
-    // 5. บังคับให้ Sheet คำนวณสูตร (สำคัญมากสำหรับเลขเอกสาร)
-    SpreadsheetApp.flush(); 
-    
-    // 6. อ่านค่า Document Number จากแถวที่เพิ่งสร้าง (คอลัมน์ B)
-    var documentNumber = sheet.getRange(newRow, 2).getValue(); 
-    
-    // --- CRITICAL SECTION END ---
+    sheet.getRange(newRow, 10).setValue(email); // J
+    sheet.getRange(newRow, 11).setValue((activityCode || '').toString().trim().toUpperCase()); // K
 
-    // 7. บันทึก Log (ตอนนี้ปลอดภัยแล้ว และใช้ชื่อคนล็อกอิน)
-    logAction(loggedUser || responsiblePerson, 'ขอเลขทะเบียนเอกสาร', 'สำเร็จ', documentNumber);
-    
+    SpreadsheetApp.flush();
+    var documentNumber = sheet.getRange(newRow, 2).getValue();
+
+    logAction(auditUser, 'ขอเลขทะเบียนเอกสาร', 'สำเร็จ', documentNumber);
     return documentNumber;
-    
   } catch (e) {
-    Logger.log("Error in locked saveData: " + e.message);
-    throw e; // โยน Error กลับไปให้ Client
+    Logger.log('Error in locked saveData: ' + e.message);
+    throw e;
   } finally {
-    // 8. ปลด Lock เสมอ (สำคัญมาก!)
     lock.releaseLock();
   }
 }
+
 
 // =========================================================================
 // [EDITED] 2. ฟังก์ชันส่งรายงานฉบับสมบูรณ์
 // =========================================================================
+
 function saveReport(documentNumber, fileId, quantitativeTarget, quantitativeResult, qualitativeTarget, qualitativeResult, expectedTarget, expectedResult, actionPlanProject, allocatedBudget, actualBudget, loggedUser) {
+  var session = requireAuth_('saveReport');
   var documentData = getDocumentData(documentNumber);
   if (!documentData) throw new Error('Invalid document number');
-  
-  var fileUrl;
-  try {
-    fileUrl = DriveApp.getFileById(fileId).getUrl(); 
-  } catch (e) {
-    Logger.log(e);
-    throw new Error("ไม่พบไฟล์ที่อัปโหลด (ID: " + fileId + ")");
-  }
 
-  var ss = SpreadsheetApp.openById(scriptProp.getProperty('key'));
-  var reportSubmitSheet = ss.getSheetByName(reportSubmitSheetName);
-  
-  // --- ส่วนที่ 1: เขียนลง reportSubmitSheet (ใช้ appendRow เพราะสันนิษฐานว่าชีตนี้ไม่มีสูตรจองแถว) ---
-  // สร้าง Array เปล่าขนาด 19 ช่อง (คอลัมน์ A-S)
-  var newRowData = new Array(19).fill('');
-  
-  // เติมข้อมูลลงใน Array ตาม Index ที่ถูกต้อง
-  newRowData[1] = documentNumber;          // B
-  newRowData[2] = documentData.reportName; // C
-  newRowData[3] = documentData.adminGroup; // D
-  newRowData[4] = documentData.workGroup;  // E
-  newRowData[5] = documentData.responsiblePerson; // F
-  newRowData[6] = fileUrl;                 // G
-  newRowData[7] = quantitativeTarget;      // H
-  newRowData[8] = qualitativeTarget;       // I
-  newRowData[9] = quantitativeResult;      // J
-  newRowData[10] = qualitativeResult;      // K
-  newRowData[11] = expectedTarget;         // L
-  newRowData[12] = parseFloat(expectedResult); // M
-  // newRowData[13] = ''; // N (Reason - ปล่อยว่าง)
-  newRowData[14] = actionPlanProject;      // O
-  newRowData[15] = documentData.email;     // P
-  newRowData[16] = allocatedBudget;        // Q
-  newRowData[17] = actualBudget;           // R
-  newRowData[18] = (documentData.activityCode || '').toString().trim().toUpperCase(); // S
-  
-  // ใช้ appendRow ซึ่งเป็น Atomic
-  reportSubmitSheet.appendRow(newRowData); 
-
-  // --- ส่วนที่ 2: อัปเดต reportNoSheet (ต้องใช้ Lock เพราะเป็นชีตเดียวกับ saveData) ---
-  const lock = LockService.getScriptLock();
-  if (!lock.tryLock(30000)) {
-    // แม้จะบันทึก Log สำเร็จ แต่ถ้าอัปเดตชีตหลักไม่สำเร็จ ควรถือเป็น Error
-    throw new Error('Server is busy, could not update master list. Please try again.');
-  }
-  
-  try {
-    // --- CRITICAL SECTION START ---
-    var reportNoSheet = ss.getSheetByName(sheetName);
-    var data = reportNoSheet.getDataRange().getValues();
-    
-    // ค้นหาแถวที่ตรงกันเพื่ออัปเดต
-    for (var i = 0; i < data.length; i++) {
-      if (data[i][1] === documentNumber) { // คอลัมน์ B
-        reportNoSheet.getRange(i + 1, 8).setValue(fileUrl); // อัปเดตคอลัมน์ H
-        break;
-      }
-    }
-    // --- CRITICAL SECTION END ---
-  } catch (e) {
-    Logger.log("Error in locked saveReport (part 2): " + e.message);
-    throw e; // โยน Error กลับไป
-  } finally {
-    lock.releaseLock();
-  }
-  
-  // บันทึก Log เมื่อทุกอย่างสำเร็จ (ใช้ชื่อคนล็อกอิน)
-  logAction(loggedUser || documentData.responsiblePerson, 'ส่งรายงาน', 'สำเร็จ', documentNumber);
-}
-
-// =========================================================================
-// [EDITED] 3. ฟังก์ชันบันทึกกิจกรรมที่ไม่ได้ดำเนินการ (เพิ่มการคัดลอกรหัสกิจกรรมไปคอลัมน์ S)
-// =========================================================================
-function saveNonCompletedProject(projectName, adminGroup, workGroup, responsiblePerson, reason, fileId, actionPlanProject, documentNumber, loggedUser) {
+  var auditUser = session.displayName || session.username || documentData.responsiblePerson || loggedUser;
   var fileUrl;
   try {
     fileUrl = DriveApp.getFileById(fileId).getUrl();
   } catch (e) {
     Logger.log(e);
-    throw new Error("ไม่พบไฟล์ที่อัปโหลด (ID: " + fileId + ")");
+    throw new Error('ไม่พบไฟล์ที่อัปโหลด (ID: ' + fileId + ')');
   }
 
-  // [NEW] ดึงรหัสกิจกรรมจากฐานข้อมูลเดิม โดยใช้หมายเลขเอกสาร
+  var ss = getSpreadsheet_();
+  var reportSubmitSheet = ss.getSheetByName(reportSubmitSheetName);
+  if (!reportSubmitSheet) throw new Error("System Error: ไม่พบแผ่นงานชื่อ '" + reportSubmitSheetName + "'");
+
+  var newRowData = new Array(19).fill('');
+  newRowData[1] = documentNumber; // B
+  newRowData[2] = documentData.reportName; // C
+  newRowData[3] = documentData.adminGroup; // D
+  newRowData[4] = documentData.workGroup; // E
+  newRowData[5] = documentData.responsiblePerson; // F
+  newRowData[6] = fileUrl; // G
+  newRowData[7] = quantitativeTarget; // H
+  newRowData[8] = qualitativeTarget; // I
+  newRowData[9] = quantitativeResult; // J
+  newRowData[10] = qualitativeResult; // K
+  newRowData[11] = expectedTarget; // L
+  newRowData[12] = parseFloat(expectedResult); // M
+  newRowData[14] = actionPlanProject; // O
+  newRowData[15] = documentData.email; // P
+  newRowData[16] = allocatedBudget; // Q
+  newRowData[17] = actualBudget; // R
+  newRowData[18] = (documentData.activityCode || '').toString().trim().toUpperCase(); // S
+
+  // คงตรรกะเดิม: append รายการธุรกรรมก่อน แล้วจึง update master list ภายใต้ lock
+  reportSubmitSheet.appendRow(newRowData);
+
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) {
+    throw new Error('Server is busy, could not update master list. Please try again.');
+  }
+
+  try {
+    var reportNoSheet = ss.getSheetByName(sheetName);
+    if (!reportNoSheet) throw new Error("System Error: ไม่พบแผ่นงานชื่อ '" + sheetName + "'");
+    var data = reportNoSheet.getDataRange().getValues();
+    var updated = false;
+    for (var i = 0; i < data.length; i++) {
+      if (data[i][1] === documentNumber) {
+        reportNoSheet.getRange(i + 1, 8).setValue(fileUrl); // H
+        updated = true;
+        break;
+      }
+    }
+    if (!updated) throw new Error('ไม่พบหมายเลขเอกสารในชีตหลักหลังจากบันทึกรายงาน');
+  } catch (e) {
+    Logger.log('Error in locked saveReport (part 2): ' + e.message);
+    throw e;
+  } finally {
+    lock.releaseLock();
+  }
+
+  logAction(auditUser, 'ส่งรายงาน', 'สำเร็จ', documentNumber);
+}
+
+
+// =========================================================================
+// [EDITED] 3. ฟังก์ชันบันทึกกิจกรรมที่ไม่ได้ดำเนินการ (เพิ่มการคัดลอกรหัสกิจกรรมไปคอลัมน์ S)
+// =========================================================================
+
+function saveNonCompletedProject(projectName, adminGroup, workGroup, responsiblePerson, reason, fileId, actionPlanProject, documentNumber, loggedUser) {
+  var session = requireAuth_('saveNonCompletedProject');
+  var auditUser = session.displayName || session.username || responsiblePerson || loggedUser;
+
+  var fileUrl;
+  try {
+    fileUrl = DriveApp.getFileById(fileId).getUrl();
+  } catch (e) {
+    Logger.log(e);
+    throw new Error('ไม่พบไฟล์ที่อัปโหลด (ID: ' + fileId + ')');
+  }
+
   var activityCode = '';
   if (documentNumber && documentNumber !== 'N/A') {
     var documentData = getDocumentData(documentNumber);
@@ -252,60 +534,56 @@ function saveNonCompletedProject(projectName, adminGroup, workGroup, responsible
     }
   }
 
-  var spreadsheet = SpreadsheetApp.openById(scriptProp.getProperty('key'));
+  var spreadsheet = getSpreadsheet_();
   var reportSubmitSheet = spreadsheet.getSheetByName(reportSubmitSheetName);
-  
-  // สร้าง Array สำหรับทั้งแถว (สมมติว่าชีตมี 19 คอลัมน์ A-S เหมือน saveReport)
-  var rowData = new Array(19).fill(''); // สร้าง Array 19 ช่อง เติมค่าว่างไว้ก่อน
+  if (!reportSubmitSheet) throw new Error("System Error: ไม่พบแผ่นงานชื่อ '" + reportSubmitSheetName + "'");
 
-  // เติมข้อมูลลงใน Index ที่ถูกต้อง (Index 0 คือคอลัมน์ A)
-  // rowData[0] = ''; // A (ปล่อยว่าง)
-  rowData[1] = documentNumber || 'N/A'; // B (บันทึกหมายเลขเอกสารที่แนบมาด้วย)
-  rowData[2] = projectName;       // C
-  rowData[3] = adminGroup;        // D
-  rowData[4] = workGroup;         // E
+  var rowData = new Array(19).fill('');
+  rowData[1] = documentNumber || 'N/A'; // B
+  rowData[2] = projectName; // C
+  rowData[3] = adminGroup; // D
+  rowData[4] = workGroup; // E
   rowData[5] = responsiblePerson; // F
-  rowData[6] = fileUrl;           // G
-  // ข้าม H-M
-  rowData[13] = reason;           // N
-  rowData[14] = actionPlanProject;// O
-  // ข้าม P-R
-  
-  // [NEW] บันทึกรหัสกิจกรรมลงคอลัมน์ S (Index 18) ให้เหมือนฟังก์ชัน saveReport
-  rowData[18] = activityCode.toString().trim().toUpperCase(); 
+  rowData[6] = fileUrl; // G
+  rowData[13] = reason; // N
+  rowData[14] = actionPlanProject; // O
+  rowData[18] = activityCode.toString().trim().toUpperCase(); // S
 
-  // ใช้ appendRow ซึ่งเป็น Atomic Operation
   reportSubmitSheet.appendRow(rowData);
-  
+
   if (documentNumber && documentNumber !== 'N/A') {
     const lock = LockService.getScriptLock();
     if (!lock.tryLock(30000)) {
       throw new Error('ระบบกำลังประมวลผลคำขออื่น ไม่สามารถอัปเดตลิงก์ในฐานข้อมูลหลักได้ โปรดลองอีกครั้ง');
     }
-    
     try {
-      var reportNoSheet = spreadsheet.getSheetByName(sheetName); 
+      var reportNoSheet = spreadsheet.getSheetByName(sheetName);
+      if (!reportNoSheet) throw new Error("System Error: ไม่พบแผ่นงานชื่อ '" + sheetName + "'");
       var data = reportNoSheet.getDataRange().getValues();
-      
+      var updated = false;
       for (var i = 0; i < data.length; i++) {
-        if (data[i][1] === documentNumber) { 
-          reportNoSheet.getRange(i + 1, 7).setValue(fileUrl); 
+        if (data[i][1] === documentNumber) {
+          reportNoSheet.getRange(i + 1, 7).setValue(fileUrl); // G
+          updated = true;
           break;
         }
       }
+      if (!updated) throw new Error('ไม่พบหมายเลขเอกสารในชีตหลักหลังจากบันทึกกิจกรรมที่ไม่ได้ดำเนินการ');
     } catch (e) {
-      Logger.log("Error in locked saveNonCompletedProject (ReportNo Update): " + e.message);
-      throw e; 
+      Logger.log('Error in locked saveNonCompletedProject (ReportNo Update): ' + e.message);
+      throw e;
     } finally {
-      lock.releaseLock(); 
+      lock.releaseLock();
     }
   }
-  
-  // บันทึก Log เมื่อทุกอย่างสำเร็จ (ใช้ชื่อคนล็อกอิน)
-  logAction(loggedUser || responsiblePerson, 'ส่งบันทึกข้อความโครงการ/กิจกรรม ที่ไม่ได้ดำเนินการ', 'สำเร็จ', projectName);
+
+  logAction(auditUser, 'ส่งบันทึกข้อความโครงการ/กิจกรรม ที่ไม่ได้ดำเนินการ', 'สำเร็จ', projectName);
 }
 
+
 function getDropdownData() {
+  requireAuth_('getDropdownData');
+
   var spreadsheet = SpreadsheetApp.openById(scriptProp.getProperty('key'));
   var sheet = spreadsheet.getSheetByName('Dropdown');
   var data = sheet.getDataRange().getValues();
@@ -321,6 +599,8 @@ function getDropdownData() {
 }
 
 function getReportCounts() {
+  requireAuth_('getReportCounts');
+
   var spreadsheet = SpreadsheetApp.openById(scriptProp.getProperty('key'));
   var sheet = spreadsheet.getSheetByName(sheetName);
   var data = sheet.getDataRange().getValues();
@@ -357,6 +637,8 @@ function _findIndex_(headers, candidates) {
 }
 
 function getActivityInfo(activityCode) {
+  requireAuth_('getActivityInfo');
+
   if (!activityCode) return null;
   var code = activityCode.toString().trim().toUpperCase();
   var ss = SpreadsheetApp.openById(scriptProp.getProperty('key'));
@@ -397,6 +679,8 @@ function getActivityInfo(activityCode) {
 // [EDITED] ฟังก์ชันแก้ไข: ถอด Hardcoded Folder ID ออก
 // ==========================================
 function getUploadUrl(metadata) {
+  requireAuth_('getUploadUrl');
+
   try {
     var folderId;
     var fileName;
@@ -467,6 +751,8 @@ function getUploadUrl(metadata) {
 }
 
 function uploadChunk(uploadUrl, chunkBase64, startByte, chunkEndByte, totalSize) {
+  requireAuth_('uploadChunk');
+
   try {
     const accessToken = ScriptApp.getOAuthToken();
     const chunkBlob = Utilities.base64Decode(chunkBase64);
@@ -523,6 +809,20 @@ function getGlobalSettings() {
 // ==========================================
 // [NEW] เพิ่มฟังก์ชันใหม่: สำหรับดึง URL ของ Web App ปัจจุบันอัตโนมัติ
 // ==========================================
+
 function getWebAppUrl() {
+  // Compatibility mode:
+  // - Login.html เดิมเรียก getWebAppUrl() หลัง checkLogin() สำเร็จ เพื่อ redirect ไป Index
+  //   กรณีนั้น session จะมี LoginRedirectPending = TRUE จึงไม่ logout
+  // - Index.html เดิมเรียก getWebAppUrl() ตอนกดออกจากระบบ
+  //   กรณีนั้น LoginRedirectPending = FALSE จึง invalidate session ก่อนส่งกลับหน้า Login
+  try {
+    var consumedLoginRedirect = consumeLoginRedirectIfNeeded_();
+    if (!consumedLoginRedirect) {
+      invalidateCurrentSession_('logout');
+    }
+  } catch (e) {
+    Logger.log('getWebAppUrl session handling skipped: ' + e.message);
+  }
   return ScriptApp.getService().getUrl();
 }
