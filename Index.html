@@ -593,13 +593,19 @@
             
             <div class="mb-3">
               <label class="form-label">รหัสกิจกรรม</label>
-              <input type="text" class="form-control" id="activityCode" placeholder="เช่น PR01AM01" oninput="handleActivityCodeInput(this.value)">
+              <input type="text" class="form-control" id="activityCode" placeholder="เช่น PR01AM01" oninput="handleActivityCodeInput(this.value)" onkeydown="handleActivityCodeKeydown(event)" onblur="lookupActivityCode({showNotFound:true})">
               <div class="form-text">หากกรอกรหัสกิจกรรม ระบบจะดึงข้อมูลบางส่วนมาแสดงให้โดยอัตโนมัติ</div>
             </div>
 
             <div class="mb-3">
               <label for="reportName" class="form-label">ชื่อเอกสาร <span class="text-danger">*</span></label>
               <input type="text" class="form-control" id="reportName" required placeholder="โปรดระบุรายละเอียดเอกสารให้ชัดเจน เช่น รายงานผลการดำเนินงาน...">
+            </div>
+
+            <div class="mb-3">
+              <label for="activityName" class="form-label">ชื่อกิจกรรม <span class="text-danger">*</span></label>
+              <input type="text" class="form-control" id="activityName" required placeholder="หากไม่มีรหัสกิจกรรม ต้องพิมพ์ชื่อกิจกรรมโดยขึ้นต้นด้วยคำว่า กิจกรรม">
+              <div class="form-text">ระบบจะเติมชื่อกิจกรรมให้อัตโนมัติเมื่อพบรหัสกิจกรรมในฐานข้อมูล LinkBAP</div>
             </div>
 
             <div class="row g-3 mb-3">
@@ -917,7 +923,7 @@
         if (headers && totalData > 0) {
            headers.forEach((headerText, index) => {
             // ซ่อนคอลัมน์ Email (9) และ Activity Code (10)
-            if (headerText.toLowerCase().includes('email') || headerText.includes('อีเมล') || headerText.includes('รหัสกิจกรรม') || headerText.toLowerCase().includes('activity code')) {
+            if (shouldHideDashboardColumn(headerText)) {
                 return; 
             }
 
@@ -963,7 +969,7 @@
             // Logic ซ่อนคอลัมน์
             if(headers) {
                 const hText = headers[cellIndex];
-                if (hText && (hText.toLowerCase().includes('email') || hText.includes('อีเมล') || hText.includes('รหัสกิจกรรม') || hText.toLowerCase().includes('activity code'))) {
+                if (hText && (shouldHideDashboardColumn(hText))) {
                     return; 
                 }
             } else {
@@ -1035,6 +1041,8 @@
     function showForm() {
       if (document.getElementById('dataForm')) document.getElementById('dataForm').reset();
       const ac = document.getElementById('activityCode'); if (ac) ac.value = '';
+      resetActivityLookupState();
+      setActivityNameManualMode();
       new bootstrap.Modal(document.getElementById('formModal')).show();
       google.script.run.withSuccessHandler(populateDropdowns).getDropdownData();
     }
@@ -1066,33 +1074,169 @@
     }
     
     let activityLookupTimer = null;
+    let activityLookupState = { code: '', found: null, pending: false };
+
+    function resetActivityLookupState() {
+        activityLookupState = { code: '', found: null, pending: false };
+        if (activityLookupTimer) {
+            clearTimeout(activityLookupTimer);
+            activityLookupTimer = null;
+        }
+    }
+
+    function setActivityNameManualMode() {
+        const el = document.getElementById('activityName');
+        if (!el) return;
+        el.readOnly = false;
+        el.classList.remove('bg-light');
+        el.placeholder = 'หากไม่มีรหัสกิจกรรม ต้องพิมพ์ชื่อกิจกรรมโดยขึ้นต้นด้วยคำว่า กิจกรรม';
+    }
+
+    function setActivityNameAutoMode(value) {
+        const el = document.getElementById('activityName');
+        if (!el) return;
+        el.value = value || '';
+        el.readOnly = true;
+        el.classList.add('bg-light');
+        el.placeholder = 'ระบบเติมชื่อกิจกรรมให้อัตโนมัติจาก LinkBAP';
+    }
+
+    function setActivityNameInvalidCodeMode() {
+        const el = document.getElementById('activityName');
+        if (!el) return;
+        el.value = '';
+        el.readOnly = true;
+        el.classList.add('bg-light');
+        el.placeholder = 'ไม่พบรหัสกิจกรรม กรุณาแก้ไขหรือลบรหัสกิจกรรม';
+    }
+
+    function clearActivityAutoFields() {
+        const activityName = document.getElementById('activityName');
+        if (activityName) activityName.value = '';
+        setSelectValue('adminGroup', '');
+        updateWorkGroups();
+        setSelectValue('workGroup', '');
+        const responsible = document.getElementById('responsiblePerson');
+        if (responsible) responsible.value = '';
+        const email = document.getElementById('email');
+        if (email) email.value = '';
+        setSelectValue('actionPlanProject', '');
+    }
+
     function handleActivityCodeInput(raw) {
         const code = (raw || '').toString().trim().toUpperCase();
         document.getElementById('activityCode').value = code;
+
         if (activityLookupTimer) clearTimeout(activityLookupTimer);
-        if (!code) return;
+
+        if (!code) {
+          clearActivityAutoFields();
+          resetActivityLookupState();
+          setActivityNameManualMode();
+          return;
+        }
+
+        activityLookupState = { code: code, found: null, pending: true };
         activityLookupTimer = setTimeout(() => {
-          google.script.run.withSuccessHandler(function(info) {
-            if (!info) return;
-            setSelectValue('adminGroup', info.adminGroup || '');
-            updateWorkGroups(); 
-            setSelectValue('workGroup', info.workGroup || '');
-            document.getElementById('responsiblePerson').value = info.responsiblePerson || '';
-            setSelectValue('actionPlanProject', info.actionPlanProject || '');
-            document.getElementById('email').value = info.email || '';
-          }).getActivityInfo(code);
-        }, 300);
+          lookupActivityCode({ showNotFound: false });
+        }, 350);
     }
-    
+
+    function handleActivityCodeKeydown(event) {
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          if (activityLookupTimer) {
+            clearTimeout(activityLookupTimer);
+            activityLookupTimer = null;
+          }
+          lookupActivityCode({ showNotFound: true, focusNext: true });
+        }
+    }
+
+    function lookupActivityCode(options) {
+        options = options || {};
+        const codeInput = document.getElementById('activityCode');
+        const code = (codeInput.value || '').toString().trim().toUpperCase();
+        codeInput.value = code;
+
+        if (!code) {
+          resetActivityLookupState();
+          setActivityNameManualMode();
+          if (typeof options.onComplete === 'function') options.onComplete(null);
+          return;
+        }
+
+        activityLookupState = { code: code, found: null, pending: true };
+
+        google.script.run
+          .withSuccessHandler(function(info) {
+            activityLookupState = { code: code, found: !!info, pending: false };
+
+            if (info) {
+              setActivityNameAutoMode(info.activityName || '');
+              setSelectValue('adminGroup', info.adminGroup || '');
+              updateWorkGroups();
+              setSelectValue('workGroup', info.workGroup || '');
+              document.getElementById('responsiblePerson').value = info.responsiblePerson || '';
+              setSelectValue('actionPlanProject', info.actionPlanProject || '');
+              document.getElementById('email').value = info.email || '';
+              if (options.focusNext) {
+                const reportName = document.getElementById('reportName');
+                if (reportName) reportName.focus();
+              }
+              if (typeof options.onComplete === 'function') options.onComplete(info);
+              return;
+            }
+
+            clearActivityAutoFields();
+            setActivityNameInvalidCodeMode();
+
+            if (options.showNotFound) {
+              Swal.fire({
+                icon: 'warning',
+                title: 'ไม่พบรหัสกิจกรรม',
+                text: 'กรุณาตรวจสอบรหัสกิจกรรมให้ถูกต้อง หรือเว้นว่างไว้หากต้องการกรอกข้อมูลเอง',
+                confirmButtonColor: '#d63031'
+              });
+            }
+
+            if (typeof options.onComplete === 'function') options.onComplete(null);
+          })
+          .withFailureHandler(function(err) {
+            activityLookupState = { code: code, found: false, pending: false };
+            clearActivityAutoFields();
+            setActivityNameInvalidCodeMode();
+            Swal.fire({
+              icon: 'error',
+              title: 'เกิดข้อผิดพลาดในการค้นหารหัสกิจกรรม',
+              text: err && err.message ? err.message : 'ไม่สามารถค้นหาข้อมูลได้',
+              confirmButtonColor: '#d63031'
+            });
+            if (typeof options.onComplete === 'function') options.onComplete(null);
+          })
+          .getActivityInfo(code);
+    }
+
     function populateDropdowns(data) {
        const adminGroup = document.getElementById('adminGroup');
+       const previousAdminGroup = adminGroup ? adminGroup.value : '';
+       const previousWorkGroup = document.getElementById('workGroup') ? document.getElementById('workGroup').value : '';
+       const previousProject = document.getElementById('actionPlanProject') ? document.getElementById('actionPlanProject').value : '';
+
        workGroups = data.workGroups;
        adminGroup.innerHTML = '<option value="" disabled selected>เลือกกลุ่มบริหาร</option>';
        data.adminGroups.forEach(g => { const opt = document.createElement('option'); opt.value = g; opt.textContent = g; adminGroup.appendChild(opt); });
-       
+
        const app = document.getElementById('actionPlanProject');
        app.innerHTML = '<option value="" disabled selected>เลือกโครงการตามแผนปฏิบัติการ</option>';
        data.actionPlanProjects.forEach(p => { const opt = document.createElement('option'); opt.value = p; opt.textContent = p; app.appendChild(opt); });
+
+       if (previousAdminGroup) {
+          setSelectValue('adminGroup', previousAdminGroup);
+          updateWorkGroups();
+          if (previousWorkGroup) setSelectValue('workGroup', previousWorkGroup);
+       }
+       if (previousProject) setSelectValue('actionPlanProject', previousProject);
     }
     
     function populateDropdownsNonCompleted(data) {
@@ -1143,6 +1287,16 @@
       return emailPattern.test(email);
     }
 
+    function shouldHideDashboardColumn(headerText) {
+      const text = (headerText || '').toString().toLowerCase();
+      return text.includes('email') ||
+             text.includes('อีเมล') ||
+             text.includes('รหัสกิจกรรม') ||
+             text.includes('activity code') ||
+             text.includes('ชื่อกิจกรรม');
+    }
+
+
     function updateMarquee() {
       google.script.run.withSuccessHandler(function(counts) {
         document.getElementById('reportCounts').innerHTML = `จำนวนเอกสารทั้งหมด ${counts.totalDocuments} รายการ : กลุ่มบริหารวิชาการ ${counts.academicGroupCount} รายการ : กลุ่มบริหารทั่วไป ${counts.generalGroupCount} รายการ : กลุ่มบริหารงานบุคคล ${counts.personnelGroupCount} รายการ : กลุ่มบริหารงบประมาณ ${counts.budgetGroupCount} รายการ`;
@@ -1152,41 +1306,129 @@
 // =========================================================================
     // [EDITED] ฟังก์ชันบันทึกข้อมูลหน้า "ขอเลขทะเบียนเอกสาร"
     // =========================================================================
+    function escapeHtml(value) {
+      return (value || '').toString()
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+
     function validateAndSaveData() {
-      const reportName = document.getElementById('reportName').value;
+      const activityCode = (document.getElementById('activityCode').value || '').trim().toUpperCase();
+
+      if (activityCode && (activityLookupState.code !== activityCode || activityLookupState.found !== true)) {
+        lookupActivityCode({
+          showNotFound: true,
+          onComplete: function(info) {
+            if (info) validateAndSaveDataAfterActivityCheck();
+          }
+        });
+        return;
+      }
+
+      validateAndSaveDataAfterActivityCheck();
+    }
+
+    function validateAndSaveDataAfterActivityCheck() {
+      const reportName = document.getElementById('reportName').value.trim();
+      const activityName = document.getElementById('activityName').value.trim();
       const adminGroup = document.getElementById('adminGroup').value;
       const workGroup = document.getElementById('workGroup').value;
-      const responsiblePerson = document.getElementById('responsiblePerson').value;
+      const responsiblePerson = document.getElementById('responsiblePerson').value.trim();
       const actionPlanProject = document.getElementById('actionPlanProject').value;
-      const email = document.getElementById('email').value;
+      const email = document.getElementById('email').value.trim();
       const activityCode = (document.getElementById('activityCode').value || '').trim().toUpperCase();
-      
+
       // [NEW] ดึงชื่อคนที่ล็อกอินเข้ามาใช้งานจริงๆ
       const loggedUser = document.getElementById('displayUserName').textContent;
 
-      if (!reportName || !adminGroup || !workGroup || !responsiblePerson || !actionPlanProject || !email) {
+      if (activityCode && activityLookupState.found !== true) {
+        Swal.fire({
+          icon: 'warning',
+          title: 'ไม่สามารถบันทึกข้อมูลได้',
+          text: 'กรุณาตรวจสอบรหัสกิจกรรมให้ถูกต้อง หรือเว้นว่างไว้หากต้องการกรอกข้อมูลเอง',
+          confirmButtonColor: '#d63031'
+        });
+        return;
+      }
+
+      if (!reportName || !activityName || !adminGroup || !workGroup || !responsiblePerson || !actionPlanProject || !email) {
         Swal.fire({icon: 'warning', title: 'กรุณากรอกข้อมูลให้ครบทุกช่อง', showConfirmButton: true});
         return;
       }
+
+      if (!activityCode && !activityName.startsWith('กิจกรรม')) {
+        Swal.fire({
+          icon: 'warning',
+          title: 'ชื่อกิจกรรมไม่ถูกต้อง',
+          text: 'กรณีไม่กรอกรหัสกิจกรรม ต้องพิมพ์ชื่อกิจกรรมโดยขึ้นต้นด้วยคำว่า "กิจกรรม"',
+          confirmButtonColor: '#d63031'
+        });
+        return;
+      }
+
       if (!validateEmail(email)) {
         Swal.fire({icon: 'error', title: 'รูปแบบอีเมลไม่ถูกต้อง', text: 'ต้องเป็น @g.klaeng.ac.th', showConfirmButton: true});
         return;
       }
 
-      showLoading("กำลังบันทึกข้อมูล...");
-      google.script.run.withSuccessHandler((documentNumber) => {
-          hideLoading();
-          Swal.fire({ 
-            position: 'center', 
-            icon: 'success', 
-            title: `สำเร็จ! เลขเอกสารคือ: <span style="white-space: nowrap;">${documentNumber}</span>`, 
-            showConfirmButton: true
-          }).then(() => { resetForm(); });
-          bootstrap.Modal.getInstance(document.getElementById('formModal')).hide();
-          fetchData();
-          updateMarquee();
-      // [EDITED] แนบชื่อคนล็อกอินไปให้เซิร์ฟเวอร์
-      }).saveData(reportName, adminGroup, workGroup, responsiblePerson, actionPlanProject, email, activityCode, loggedUser); 
+      const summaryHtml = `
+        <div class="text-start" style="font-size:0.95rem; line-height:1.7;">
+          <div><strong>รหัสกิจกรรม:</strong> ${escapeHtml(activityCode || '-')}</div>
+          <div><strong>ชื่อเอกสาร:</strong> ${escapeHtml(reportName)}</div>
+          <div><strong>ชื่อกิจกรรม:</strong> ${escapeHtml(activityName)}</div>
+          <div><strong>กลุ่มบริหาร:</strong> ${escapeHtml(adminGroup)}</div>
+          <div><strong>กลุ่มงาน:</strong> ${escapeHtml(workGroup)}</div>
+          <div><strong>ผู้รับผิดชอบ:</strong> ${escapeHtml(responsiblePerson)}</div>
+          <div><strong>Email:</strong> ${escapeHtml(email)}</div>
+          <div><strong>โครงการตามแผนปฏิบัติการ:</strong> ${escapeHtml(actionPlanProject)}</div>
+          <hr>
+          <div class="text-danger small">กรุณาตรวจสอบข้อมูลให้ถูกต้องก่อนยืนยัน ระบบจะสร้างเลขทะเบียนเอกสารหลังจากกดยืนยัน</div>
+        </div>
+      `;
+
+      Swal.fire({
+        icon: 'question',
+        title: 'ยืนยันการขอเลขทะเบียนเอกสาร',
+        html: summaryHtml,
+        showCancelButton: true,
+        confirmButtonText: 'ยืนยันและบันทึก',
+        cancelButtonText: 'กลับไปแก้ไข',
+        confirmButtonColor: '#f1c40f',
+        cancelButtonColor: '#6c757d',
+        reverseButtons: true,
+        width: 720
+      }).then((result) => {
+        if (!result.isConfirmed) return;
+
+        showLoading("กำลังบันทึกข้อมูล...");
+        google.script.run
+          .withSuccessHandler((documentNumber) => {
+            hideLoading();
+            Swal.fire({ 
+              position: 'center', 
+              icon: 'success', 
+              title: `สำเร็จ! เลขเอกสารคือ: <span style="white-space: nowrap;">${documentNumber}</span>`, 
+              showConfirmButton: true
+            }).then(() => { resetForm(); });
+            bootstrap.Modal.getInstance(document.getElementById('formModal')).hide();
+            fetchData();
+            updateMarquee();
+          })
+          .withFailureHandler(function(err) {
+            hideLoading();
+            Swal.fire({
+              icon: 'error',
+              title: 'บันทึกข้อมูลไม่สำเร็จ',
+              text: err && err.message ? err.message : 'เกิดข้อผิดพลาดในการบันทึกข้อมูล',
+              confirmButtonColor: '#d63031'
+            });
+          })
+          // [EDITED] แนบชื่อกิจกรรมและชื่อคนล็อกอินไปให้เซิร์ฟเวอร์
+          .saveData(reportName, adminGroup, workGroup, responsiblePerson, actionPlanProject, email, activityCode, activityName, loggedUser);
+      });
     }
 
 function validateAndSaveReport() {

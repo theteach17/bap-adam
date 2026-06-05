@@ -1,5 +1,7 @@
 var sheetName = 'ReportNo';
 var reportSubmitSheetName = 'ReportSubmit';
+var reportNoActivityNameColumn = 12; // L: ชื่อกิจกรรม (เพิ่มท้ายตารางเพื่อไม่กระทบคอลัมน์ A-K เดิม)
+var reportNoActivityNameHeader = 'ชื่อกิจกรรม';
 var scriptProp = PropertiesService.getScriptProperties();
 
 function initialSetup() {
@@ -30,6 +32,27 @@ function getSpreadsheet_() {
   }
   return SpreadsheetApp.openById(key);
 }
+
+function ensureReportNoActivityNameColumn_(sheet) {
+  if (!sheet) throw new Error("System Error: ไม่พบแผ่นงานชื่อ '" + sheetName + "'");
+
+  var headerCell = sheet.getRange(1, reportNoActivityNameColumn);
+  var currentHeader = String(headerCell.getValue() || '').trim();
+
+  if (!currentHeader) {
+    headerCell.setValue(reportNoActivityNameHeader);
+    return;
+  }
+
+  if (currentHeader !== reportNoActivityNameHeader) {
+    throw new Error(
+      'ตรวจพบว่าคอลัมน์ L ของชีต ReportNo มีหัวคอลัมน์ "' + currentHeader +
+      '" อยู่แล้ว ระบบจึงไม่บันทึกชื่อกิจกรรมเพื่อป้องกันการเขียนทับข้อมูลเดิม กรุณาตรวจสอบคอลัมน์ L และตั้งหัวคอลัมน์เป็น "' +
+      reportNoActivityNameHeader + '" ก่อนใช้งาน'
+    );
+  }
+}
+
 
 function getCurrentUserKey_() {
   var key = Session.getTemporaryActiveUserKey();
@@ -385,7 +408,8 @@ function getDocumentData(documentNumber) {
         responsiblePerson: data[i][5], // F
         actionPlanProject: data[i][8], // I
         email: data[i][9], // J
-        activityCode: data[i][10] // K
+        activityCode: data[i][10], // K
+        activityName: data[i][11] || '' // L
       };
     }
   }
@@ -397,8 +421,47 @@ function getDocumentData(documentNumber) {
 // [EDITED] 1. ฟังก์ชันขอเลขทะเบียนเอกสาร
 // =========================================================================
 
-function saveData(reportName, adminGroup, workGroup, responsiblePerson, actionPlanProject, email, activityCode, loggedUser) {
+function saveData(reportName, adminGroup, workGroup, responsiblePerson, actionPlanProject, email, activityCode, activityName, loggedUser) {
   var session = requireAuth_('saveData');
+
+  // Backward compatibility: หากหน้าเว็บเก่าเรียก saveData ด้วย 8 arguments
+  // ค่าตัวที่ 8 จะเป็น loggedUser เดิม ไม่ใช่ activityName
+  if (arguments.length === 8) {
+    loggedUser = activityName;
+    activityName = '';
+  }
+
+  reportName = String(reportName || '').trim();
+  adminGroup = String(adminGroup || '').trim();
+  workGroup = String(workGroup || '').trim();
+  responsiblePerson = String(responsiblePerson || '').trim();
+  actionPlanProject = String(actionPlanProject || '').trim();
+  email = String(email || '').trim();
+  activityCode = String(activityCode || '').trim().toUpperCase();
+  activityName = String(activityName || '').trim();
+
+  if (!reportName || !adminGroup || !workGroup || !responsiblePerson || !actionPlanProject || !email) {
+    throw new Error('กรุณากรอกข้อมูลให้ครบทุกช่อง');
+  }
+
+  if (activityCode) {
+    var activityInfo = getActivityInfo(activityCode);
+    if (!activityInfo) {
+      throw new Error('ไม่พบรหัสกิจกรรมนี้ในฐานข้อมูล LinkBAP กรุณาตรวจสอบรหัสกิจกรรมให้ถูกต้อง หรือเว้นว่างไว้หากต้องการกรอกข้อมูลเอง');
+    }
+    activityName = String(activityInfo.activityName || activityName || '').trim();
+    if (!activityName) {
+      throw new Error('พบรหัสกิจกรรมแล้ว แต่ไม่พบข้อมูลชื่อกิจกรรมใน LinkBAP กรุณาตรวจสอบฐานข้อมูลกิจกรรม');
+    }
+  } else {
+    if (!activityName) {
+      throw new Error('กรณีไม่กรอกรหัสกิจกรรม ต้องกรอกชื่อกิจกรรม');
+    }
+    if (activityName.indexOf('กิจกรรม') !== 0) {
+      throw new Error('กรณีไม่กรอกรหัสกิจกรรม ชื่อกิจกรรมต้องขึ้นต้นด้วยคำว่า "กิจกรรม"');
+    }
+  }
+
   var auditUser = session.displayName || session.username || responsiblePerson || loggedUser;
 
   const lock = LockService.getScriptLock();
@@ -411,6 +474,8 @@ function saveData(reportName, adminGroup, workGroup, responsiblePerson, actionPl
     var sheet = ss.getSheetByName(sheetName);
     if (!sheet) throw new Error("System Error: ไม่พบแผ่นงานชื่อ '" + sheetName + "'");
 
+    ensureReportNoActivityNameColumn_(sheet);
+
     // คงตรรกะเดิม: หาตำแหน่งแถวใหม่จากคอลัมน์ C เพื่อไม่กระทบสูตรเลขทะเบียนในชีต
     var lastRow = sheet.getRange("C:C").getValues().filter(String).length;
     var newRow = lastRow + 1;
@@ -421,7 +486,8 @@ function saveData(reportName, adminGroup, workGroup, responsiblePerson, actionPl
     sheet.getRange(newRow, 6).setValue(responsiblePerson); // F
     sheet.getRange(newRow, 9).setValue(actionPlanProject); // I
     sheet.getRange(newRow, 10).setValue(email); // J
-    sheet.getRange(newRow, 11).setValue((activityCode || '').toString().trim().toUpperCase()); // K
+    sheet.getRange(newRow, 11).setValue(activityCode); // K
+    sheet.getRange(newRow, reportNoActivityNameColumn).setValue(activityName); // L
 
     SpreadsheetApp.flush();
     var documentNumber = sheet.getRange(newRow, 2).getValue();
@@ -647,28 +713,36 @@ function getActivityInfo(activityCode) {
   var values = sheet.getDataRange().getValues();
   if (!values || values.length < 2) return null;
   var headers = values[0];
+
   var idxCode  = _findIndex_(headers, ['รหัสกิจกรรม','activity code','activitycode','code']);
+  var idxProj  = _findIndex_(headers, ['โครงการตามแผนปฏิบัติการ','โครงการตามแผน','โครงการ','action plan project','actionplanproject','project']);
   var idxAdmin = _findIndex_(headers, ['กลุ่มบริหาร','admin group','admingroup']);
-  var idxWork  = _findIndex_(headers, ['กลุ่มงาน','work group','workgroup']);
-  var idxProj  = _findIndex_(headers, ['โครงการตามแผนปฏิบัติการ','โครงการตามแผน','action plan project','actionplanproject']);
-  var idxEmail = _findIndex_(headers, ['email','อีเมล','อีเมล์']);
+  var idxWork  = _findIndex_(headers, ['กลุ่มงาน/งาน','กลุ่มงาน','งาน','work group','workgroup']);
+  var idxActivityName = _findIndex_(headers, ['ชื่อกิจกรรม','กิจกรรม','activity name','activityname']);
+  var idxResponsible = _findIndex_(headers, ['ผู้รับผิดชอบ','responsible person','responsibleperson','owner']);
+  var idxEmail = _findIndex_(headers, ['email ผู้รับผิดชอบ','email','อีเมล','อีเมล์']);
+
+  // Fallback ตามโครงสร้าง LinkBAP ปัจจุบัน:
+  // A รหัสกิจกรรม, B โครงการ, C กลุ่มบริหาร, D กลุ่มงาน/งาน, E ชื่อกิจกรรม, F ผู้รับผิดชอบ, G Email ผู้รับผิดชอบ
   if (idxProj  < 0) idxProj  = 1;
+  if (idxAdmin < 0) idxAdmin = 2;
   if (idxWork  < 0) idxWork  = 3;
+  if (idxActivityName < 0) idxActivityName = 4;
+  if (idxResponsible < 0) idxResponsible = 5;
   if (idxEmail < 0) idxEmail = 6;
   if (idxCode === -1) return null;
+
   for (var r = 1; r < values.length; r++) {
     var row = values[r];
     if (!row[idxCode]) continue;
     if (row[idxCode].toString().trim().toUpperCase() === code) {
       return {
         adminGroup:        idxAdmin >= 0 ? String(row[idxAdmin] || '').trim() : '',
-        workGroup:         String(row[idxWork]  || '').trim(),
-        actionPlanProject: String(row[idxProj]  || '').trim(),
-        email:             String(row[idxEmail] || '').trim(),
-        responsiblePerson: (function(){
-          var i = _findIndex_(headers, ['ผู้รับผิดชอบ','responsible person','responsibleperson','owner']);
-          return i >= 0 ? String(row[i] || '').trim() : '';
-        })()
+        workGroup:         idxWork >= 0 ? String(row[idxWork] || '').trim() : '',
+        actionPlanProject: idxProj >= 0 ? String(row[idxProj] || '').trim() : '',
+        activityName:      idxActivityName >= 0 ? String(row[idxActivityName] || '').trim() : '',
+        email:             idxEmail >= 0 ? String(row[idxEmail] || '').trim() : '',
+        responsiblePerson: idxResponsible >= 0 ? String(row[idxResponsible] || '').trim() : ''
       };
     }
   }
