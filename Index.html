@@ -676,6 +676,7 @@
                 <div class="col-md-6"><label class="form-label">รหัสกิจกรรม</label><input type="text" class="form-control bg-light" id="activityCodeReportForm" readonly></div>
                 <div class="col-md-6"><label class="form-label">ชื่อรายงาน</label><input type="text" class="form-control bg-light" id="reportNameReportForm" readonly></div>
             </div>
+            <div class="mb-3"><label class="form-label">ชื่อกิจกรรม</label><input type="text" class="form-control bg-light" id="activityNameReportForm" readonly></div>
             <div class="mb-3"><label class="form-label">โครงการตามแผนฯ</label><input type="text" class="form-control bg-light" id="actionPlanProjectReportForm" readonly></div>
             <div class="row g-3 mb-3">
                <div class="col-md-6"><label class="form-label">กลุ่มบริหาร</label><input type="text" class="form-control bg-light" id="adminGroupReportForm" readonly></div>
@@ -684,6 +685,21 @@
             <div class="row g-3 mb-3">
                <div class="col-md-6"><label class="form-label">ผู้รับผิดชอบ</label><input type="text" class="form-control bg-light" id="responsiblePersonReportForm" readonly></div>
                <div class="col-md-6"><label class="form-label">Email</label><input type="text" class="form-control bg-light" id="emailReportForm" readonly></div>
+            </div>
+
+            <div class="alert alert-warning border-0 shadow-sm mb-3 d-none" id="legacyReportTypeNotice">
+              <small><i class="fas fa-info-circle me-1"></i> เอกสารนี้เป็นรายการเดิมที่ขอขึ้นทะเบียนก่อนเริ่มใช้มาตรฐานชื่อเอกสารใหม่ กรุณาเลือกประเภทเอกสารเพื่อให้ระบบกำหนดการกรอกค่าสถิติได้ถูกต้อง</small>
+            </div>
+
+            <div class="mb-3 d-none" id="reportValidationTypeWrapper">
+              <label class="form-label">ประเภทเอกสารสำหรับการตรวจค่าสถิติ <span class="text-danger">*</span></label>
+              <select class="form-select" id="reportValidationType" onchange="applyReportTypeRules()">
+                <option value="" selected disabled>เลือกประเภทเอกสาร</option>
+                <option value="REPORT_ACTIVITY">รายงานผลการดำเนินกิจกรรม</option>
+                <option value="NON_COMPLETED_MEMO">บันทึกข้อความชี้แจงไม่ดำเนินกิจกรรม</option>
+                <option value="OTHER_DOCUMENT">เอกสารอื่น ๆ</option>
+              </select>
+              <div class="form-text">ใช้เฉพาะรายการเดิมที่ระบบไม่สามารถจำแนกประเภทจากชื่อเอกสารได้อัตโนมัติ</div>
             </div>
             
             <hr class="my-4">
@@ -725,8 +741,38 @@
                     <input type="text" class="form-control" id="expectedTarget" required>
                 </div>
                 <div class="col-md-6">
-                    <label class="form-label">ค่า X̄ (X Bar) ของผลการบริหารกิจกรรม <span class="text-danger">*</span></label>
-                    <input type="number" class="form-control" id="expectedResult" step="0.01" required placeholder="ตัวเลขเท่านั้น">
+                    <label class="form-label">บรรลุผลที่คาดว่าจะได้รับ <span class="text-danger">*</span></label>
+                    <select class="form-select" id="expectedAchievementResult" required>
+                        <option value="" selected disabled>เลือกผลลัพธ์</option>
+                        <option value="บรรลุ">บรรลุ</option>
+                        <option value="ไม่บรรลุ">ไม่บรรลุ</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="row g-3 mb-3">
+                <div class="col-md-6">
+                    <label class="form-label">ค่า X̄ (X Bar) ความพึงพอใจ <span class="text-danger stats-required-marker d-none">*</span></label>
+                    <input type="text" inputmode="decimal" class="form-control report-stat-field" id="satisfactionXbar" placeholder="เช่น 4.50">
+                    <div class="form-text">กรอกเป็นเลขทศนิยม 2 หลัก ช่วง 0.01 - 5.00</div>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">ค่า SD ความพึงพอใจ <span class="text-danger stats-required-marker d-none">*</span></label>
+                    <input type="text" inputmode="decimal" class="form-control report-stat-field" id="satisfactionSD" placeholder="เช่น 0.50">
+                    <div class="form-text">กรอกเป็นเลขทศนิยม 2 หลัก ช่วง 0.01 - 1.00</div>
+                </div>
+            </div>
+
+            <div class="row g-3 mb-3">
+                <div class="col-md-6">
+                    <label class="form-label">ค่า X̄ (X Bar) ของผลการบริหารกิจกรรม <span class="text-danger stats-required-marker d-none">*</span></label>
+                    <input type="text" inputmode="decimal" class="form-control report-stat-field" id="expectedResult" placeholder="เช่น 4.50">
+                    <div class="form-text">กรอกเป็นเลขทศนิยม 2 หลัก ช่วง 0.01 - 5.00</div>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">ค่า SD ผลการบริหารกิจกรรม <span class="text-danger stats-required-marker d-none">*</span></label>
+                    <input type="text" inputmode="decimal" class="form-control report-stat-field" id="managementSD" placeholder="เช่น 0.50">
+                    <div class="form-text">กรอกเป็นเลขทศนิยม 2 หลัก ช่วง 0.01 - 1.00</div>
                 </div>
             </div>
 
@@ -839,6 +885,7 @@
     let sortOrder = 'asc';
     let sortColumn = -1;
     let workGroups = {};
+    let currentReportDocumentMeta = null;
     const CHUNK_SIZE = 2 * 1024 * 1024; // 2MB Chunk Size
 
     // --- Window OnLoad ---
@@ -1050,6 +1097,7 @@
     
     function showReportForm() {
       if (document.getElementById('reportForm')) document.getElementById('reportForm').reset();
+      clearReportReadOnlyFields();
       new bootstrap.Modal(document.getElementById('reportFormModal')).show();
     }
 
@@ -1266,21 +1314,171 @@
     }
     
     function fetchDocumentData() {
-        const docNum = document.getElementById('documentNumber').value;
+        const docNum = document.getElementById('documentNumber').value.trim();
         if(!docNum) return;
+        showLoading("กำลังค้นหาข้อมูล...");
         google.script.run.withSuccessHandler(function(data){
+            hideLoading();
             if(data) {
-                document.getElementById('reportNameReportForm').value = data.reportName;
-                document.getElementById('adminGroupReportForm').value = data.adminGroup;
-                document.getElementById('workGroupReportForm').value = data.workGroup;
-                document.getElementById('responsiblePersonReportForm').value = data.responsiblePerson;
-                document.getElementById('actionPlanProjectReportForm').value = data.actionPlanProject;
-                document.getElementById('emailReportForm').value = data.email;
+                currentReportDocumentMeta = data;
+                document.getElementById('reportNameReportForm').value = data.reportName || '';
+                document.getElementById('adminGroupReportForm').value = data.adminGroup || '';
+                document.getElementById('workGroupReportForm').value = data.workGroup || '';
+                document.getElementById('responsiblePersonReportForm').value = data.responsiblePerson || '';
+                document.getElementById('actionPlanProjectReportForm').value = data.actionPlanProject || '';
+                document.getElementById('emailReportForm').value = data.email || '';
                 document.getElementById('activityCodeReportForm').value = data.activityCode || '';
+                document.getElementById('activityNameReportForm').value = data.activityName || '';
+                prepareReportValidationType(data);
+                applyReportTypeRules();
             } else {
+                clearReportReadOnlyFields();
                 Swal.fire({icon:'error', title:'ไม่พบข้อมูล', showConfirmButton:true});
             }
+        }).withFailureHandler(function(err){
+            hideLoading();
+            Swal.fire({icon:'error', title:'เกิดข้อผิดพลาด', text: err.message || err});
         }).getDocumentData(docNum);
+    }
+
+    function clearReportReadOnlyFields() {
+      currentReportDocumentMeta = null;
+      ['reportNameReportForm','adminGroupReportForm','workGroupReportForm','responsiblePersonReportForm','actionPlanProjectReportForm','emailReportForm','activityCodeReportForm','activityNameReportForm'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.value = '';
+      });
+      const typeSelect = document.getElementById('reportValidationType');
+      if (typeSelect) typeSelect.value = '';
+      const wrapper = document.getElementById('reportValidationTypeWrapper');
+      const notice = document.getElementById('legacyReportTypeNotice');
+      if (wrapper) wrapper.classList.add('d-none');
+      if (notice) notice.classList.add('d-none');
+      applyReportTypeRules();
+    }
+
+    function prepareReportValidationType(data) {
+      const wrapper = document.getElementById('reportValidationTypeWrapper');
+      const notice = document.getElementById('legacyReportTypeNotice');
+      const typeSelect = document.getElementById('reportValidationType');
+      if (!wrapper || !notice || !typeSelect) return;
+
+      const isLegacyUnknown = data && data.reportValidationMode === 'LEGACY_2568_UNKNOWN';
+      if (isLegacyUnknown) {
+        wrapper.classList.remove('d-none');
+        notice.classList.remove('d-none');
+        typeSelect.value = '';
+      } else {
+        wrapper.classList.add('d-none');
+        notice.classList.add('d-none');
+        typeSelect.value = (data && data.reportValidationType) ? data.reportValidationType : '';
+      }
+    }
+
+    function getSelectedReportValidationType() {
+      const typeSelect = document.getElementById('reportValidationType');
+      if (currentReportDocumentMeta && currentReportDocumentMeta.reportValidationMode === 'LEGACY_2568_UNKNOWN') {
+        return typeSelect ? (typeSelect.value || '') : '';
+      }
+      return (currentReportDocumentMeta && currentReportDocumentMeta.reportValidationType) ? currentReportDocumentMeta.reportValidationType : (typeSelect ? typeSelect.value : '');
+    }
+
+    function getReportValidationTypeLabel(type) {
+      const labels = {
+        REPORT_ACTIVITY: 'รายงานผลการดำเนินกิจกรรม',
+        NON_COMPLETED_MEMO: 'บันทึกข้อความชี้แจงไม่ดำเนินกิจกรรม',
+        OTHER_DOCUMENT: 'เอกสารอื่น ๆ'
+      };
+      return labels[type] || '-';
+    }
+
+    function isReportStatsRequired() {
+      return getSelectedReportValidationType() === 'REPORT_ACTIVITY';
+    }
+
+    function setReportStatsDisabled(disabled) {
+      ['satisfactionXbar','satisfactionSD','expectedResult','managementSD'].forEach(id => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.required = false;
+        el.disabled = disabled;
+        if (disabled) el.value = '';
+      });
+    }
+
+    function applyReportTypeRules() {
+      const required = isReportStatsRequired();
+      const hasKnownType = !!getSelectedReportValidationType();
+      const disableStats = !hasKnownType;
+      setReportStatsDisabled(disableStats);
+      document.querySelectorAll('.stats-required-marker').forEach(el => {
+        el.classList.toggle('d-none', !required);
+      });
+    }
+
+    function validateDecimalTwoPlaces(value, min, max, fieldLabel, required) {
+      const v = (value || '').toString().trim();
+      if (!v) {
+        return required ? `${fieldLabel} จำเป็นต้องกรอก` : '';
+      }
+      if (!/^\d+\.\d{2}$/.test(v)) {
+        return `${fieldLabel} ต้องเป็นเลขทศนิยม 2 หลัก เช่น 4.50`;
+      }
+      const num = Number(v);
+      if (Number.isNaN(num) || num < min || num > max) {
+        return `${fieldLabel} ต้องอยู่ระหว่าง ${min.toFixed(2)} ถึง ${max.toFixed(2)}`;
+      }
+      return '';
+    }
+
+    function validateReportStatistics(required) {
+      const checks = [
+        { id: 'satisfactionXbar', label: 'ค่า X̄ (X Bar) ความพึงพอใจ', min: 0.01, max: 5.00 },
+        { id: 'satisfactionSD', label: 'ค่า SD ความพึงพอใจ', min: 0.01, max: 1.00 },
+        { id: 'expectedResult', label: 'ค่า X̄ (X Bar) ของผลการบริหารกิจกรรม', min: 0.01, max: 5.00 },
+        { id: 'managementSD', label: 'ค่า SD ผลการบริหารกิจกรรม', min: 0.01, max: 1.00 }
+      ];
+      for (const check of checks) {
+        const el = document.getElementById(check.id);
+        const error = validateDecimalTwoPlaces(el ? el.value : '', check.min, check.max, check.label, required);
+        if (error) return error;
+      }
+      return '';
+    }
+
+    function buildReportConfirmationHtml(formData) {
+      const statRequiredText = formData.requiresStatistics ? 'ต้องกรอกค่าสถิติ' : 'ไม่บังคับกรอกค่าสถิติ';
+      const rows = [
+        ['หมายเลขเอกสาร', formData.documentNumber],
+        ['ชื่อรายงาน', formData.reportName],
+        ['ชื่อกิจกรรม', formData.activityName || '-'],
+        ['รหัสกิจกรรม', formData.activityCode || '-'],
+        ['โครงการตามแผนฯ', formData.actionPlanProject || '-'],
+        ['กลุ่มบริหาร', formData.adminGroup || '-'],
+        ['กลุ่มงาน', formData.workGroup || '-'],
+        ['ผู้รับผิดชอบ', formData.responsiblePerson || '-'],
+        ['ประเภทเอกสารสำหรับการตรวจค่าสถิติ', `${getReportValidationTypeLabel(formData.reportValidationType)} (${statRequiredText})`],
+        ['เป้าหมายเชิงปริมาณ', formData.quantitativeTarget],
+        ['ผลของเป้าหมายเชิงปริมาณ', formData.quantitativeResult],
+        ['เป้าหมายเชิงคุณภาพ', formData.qualitativeTarget],
+        ['ผลของเป้าหมายเชิงคุณภาพ', formData.qualitativeResult],
+        ['ผลที่คาดว่าจะได้รับ', formData.expectedTarget],
+        ['บรรลุผลที่คาดว่าจะได้รับ', formData.expectedAchievementResult],
+        ['ค่า X̄ ความพึงพอใจ', formData.satisfactionXbar || '-'],
+        ['ค่า SD ความพึงพอใจ', formData.satisfactionSD || '-'],
+        ['ค่า X̄ ผลการบริหารกิจกรรม', formData.expectedResult || '-'],
+        ['ค่า SD ผลการบริหารกิจกรรม', formData.managementSD || '-'],
+        ['งบประมาณที่ได้รับจัดสรร', formData.allocatedBudget],
+        ['งบประมาณที่ใช้จริง', formData.actualBudget]
+      ];
+      return `
+        <div class="text-start" style="font-size:0.92rem; line-height:1.55; max-height:60vh; overflow:auto;">
+          <div class="mb-2 text-muted">กรุณาตรวจสอบข้อมูลก่อนส่งรายงาน หากถูกต้องให้กดยืนยัน</div>
+          <table class="table table-sm table-bordered mb-0">
+            <tbody>
+              ${rows.map(([label, value]) => `<tr><th style="width:38%; white-space:nowrap;">${escapeHtml(label)}</th><td>${escapeHtml(value)}</td></tr>`).join('')}
+            </tbody>
+          </table>
+        </div>`;
     }
     
     function validateEmail(email) {
@@ -1472,46 +1670,103 @@
 
 function validateAndSaveReport() {
     const form = document.getElementById('reportForm');
-    if (!form.checkValidity()) {
-        form.reportValidity(); 
-        return; 
+    applyReportTypeRules();
+
+    if (!currentReportDocumentMeta || !document.getElementById('reportNameReportForm').value) {
+        Swal.fire({ icon: 'warning', title: 'กรุณาค้นหาหมายเลขเอกสารก่อนส่งรายงาน', showConfirmButton: true });
+        return;
     }
 
-    const formData = {
-        documentNumber: document.getElementById('documentNumber').value,
-        quantitativeTarget: document.getElementById('quantitativeTarget').value,
-        quantitativeResult: document.getElementById('quantitativeResult').value,
-        qualitativeTarget: document.getElementById('qualitativeTarget').value,
-        qualitativeResult: document.getElementById('qualitativeResult').value,
-        expectedTarget: document.getElementById('expectedTarget').value,
-        expectedResult: parseFloat(document.getElementById('expectedResult').value),
-        actionPlanProject: document.getElementById('actionPlanProjectReportForm').value,
-        allocatedBudget: document.getElementById('allocatedBudget').value,
-        actualBudget: document.getElementById('actualBudget').value
-    };
-    
-    const fileInput = document.getElementById('fileUploadReport');
-    const file = fileInput.files[0];
-
-    if (isNaN(formData.expectedResult)) {
+    if (currentReportDocumentMeta && currentReportDocumentMeta.reportValidationMode === 'INVALID_STANDARD_NAME') {
         Swal.fire({
-            icon: 'warning',
-            title: 'กรุณากรอกค่า X̄ ให้ถูกต้อง',
-            text: 'ค่า X̄ ต้องเป็นตัวเลขเท่านั้น',
+            icon: 'error',
+            title: 'ชื่อเอกสารไม่เป็นไปตามมาตรฐาน',
+            text: 'กรุณาติดต่อผู้ดูแลระบบเพื่อตรวจสอบชื่อเอกสารก่อนส่งรายงาน',
             showConfirmButton: true
         });
         return;
     }
 
-    showLoading("กำลังเตรียมการอัปโหลด...");
-    const fileMetadata = {
-        documentNumber: formData.documentNumber,
-        mimeType: file.type || 'application/pdf'
+    const reportValidationType = getSelectedReportValidationType();
+    if (!reportValidationType) {
+        Swal.fire({
+            icon: 'warning',
+            title: 'กรุณาเลือกประเภทเอกสาร',
+            text: 'รายการนี้เป็นเอกสารเดิมที่ระบบไม่สามารถจำแนกประเภทจากชื่อเอกสารได้อัตโนมัติ',
+            showConfirmButton: true
+        }).then(() => {
+            const el = document.getElementById('reportValidationType');
+            if (el) el.focus();
+        });
+        return;
+    }
+
+    if (!form.checkValidity()) {
+        form.reportValidity(); 
+        return; 
+    }
+
+    const requiresStatistics = isReportStatsRequired();
+    const statError = validateReportStatistics(requiresStatistics);
+    if (statError) {
+        Swal.fire({ icon: 'warning', title: 'ข้อมูลค่าสถิติไม่ถูกต้อง', text: statError, showConfirmButton: true });
+        return;
+    }
+
+    const fileInput = document.getElementById('fileUploadReport');
+    const file = fileInput.files[0];
+    if (!file) {
+        Swal.fire({ icon: 'warning', title: 'กรุณาอัปโหลดไฟล์ PDF', showConfirmButton: true });
+        return;
+    }
+
+    const formData = {
+        documentNumber: document.getElementById('documentNumber').value.trim(),
+        reportName: document.getElementById('reportNameReportForm').value,
+        activityCode: document.getElementById('activityCodeReportForm').value,
+        activityName: document.getElementById('activityNameReportForm').value,
+        adminGroup: document.getElementById('adminGroupReportForm').value,
+        workGroup: document.getElementById('workGroupReportForm').value,
+        responsiblePerson: document.getElementById('responsiblePersonReportForm').value,
+        quantitativeTarget: document.getElementById('quantitativeTarget').value,
+        quantitativeResult: document.getElementById('quantitativeResult').value,
+        qualitativeTarget: document.getElementById('qualitativeTarget').value,
+        qualitativeResult: document.getElementById('qualitativeResult').value,
+        expectedTarget: document.getElementById('expectedTarget').value,
+        expectedAchievementResult: document.getElementById('expectedAchievementResult').value,
+        satisfactionXbar: document.getElementById('satisfactionXbar').value.trim(),
+        satisfactionSD: document.getElementById('satisfactionSD').value.trim(),
+        expectedResult: document.getElementById('expectedResult').value.trim(),
+        managementSD: document.getElementById('managementSD').value.trim(),
+        actionPlanProject: document.getElementById('actionPlanProjectReportForm').value,
+        allocatedBudget: document.getElementById('allocatedBudget').value,
+        actualBudget: document.getElementById('actualBudget').value,
+        reportValidationType: reportValidationType,
+        requiresStatistics: requiresStatistics
     };
 
-    google.script.run.withSuccessHandler(function(uploadUrl) {
-        uploadFileInChunks(file, uploadUrl, formData, 'saveReport');
-    }).withFailureHandler(onUploadFailed).getUploadUrl(fileMetadata);
+    Swal.fire({
+        icon: 'question',
+        title: 'ยืนยันการส่งรายงาน',
+        html: buildReportConfirmationHtml(formData),
+        width: '850px',
+        showCancelButton: true,
+        confirmButtonText: 'ยืนยันและส่งรายงาน',
+        cancelButtonText: 'กลับไปแก้ไข',
+        confirmButtonColor: '#00b894',
+        cancelButtonColor: '#b2bec3'
+    }).then((result) => {
+        if (!result.isConfirmed) return;
+        showLoading("กำลังเตรียมการอัปโหลด...");
+        const fileMetadata = {
+            documentNumber: formData.documentNumber,
+            mimeType: file.type || 'application/pdf'
+        };
+
+        google.script.run.withSuccessHandler(function(uploadUrl) {
+            uploadFileInChunks(file, uploadUrl, formData, 'saveReport');
+        }).withFailureHandler(onUploadFailed).getUploadUrl(fileMetadata);
+    });
 }
 
     function fetchDocumentDataForNonCompleted() {
@@ -1634,8 +1889,9 @@ function validateAndSaveReport() {
         }).withFailureHandler(onUploadFailed).saveReport(
             formData.documentNumber, fileId, formData.quantitativeTarget, formData.quantitativeResult,
             formData.qualitativeTarget, formData.qualitativeResult, formData.expectedTarget,
-            // [EDITED] แนบชื่อคนล็อกอินไปให้เซิร์ฟเวอร์
-            formData.expectedResult, formData.actionPlanProject, formData.allocatedBudget, formData.actualBudget, loggedUser 
+            formData.expectedResult, formData.actionPlanProject, formData.allocatedBudget, formData.actualBudget,
+            formData.activityName, formData.expectedAchievementResult, formData.satisfactionXbar,
+            formData.satisfactionSD, formData.managementSD, formData.reportValidationType, loggedUser 
           );
       } else if (finalFunction === 'saveNonCompletedProject') {
         google.script.run.withSuccessHandler(() => {

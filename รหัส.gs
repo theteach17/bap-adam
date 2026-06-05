@@ -2,6 +2,20 @@ var sheetName = 'ReportNo';
 var reportSubmitSheetName = 'ReportSubmit';
 var reportNoActivityNameColumn = 12; // L: ชื่อกิจกรรม (เพิ่มท้ายตารางเพื่อไม่กระทบคอลัมน์ A-K เดิม)
 var reportNoActivityNameHeader = 'ชื่อกิจกรรม';
+var reportSubmitExtendedStartColumn = 20; // T: เพิ่มข้อมูลใหม่ท้ายตาราง ReportSubmit เพื่อไม่กระทบคอลัมน์ A-S เดิม
+var reportSubmitExtendedHeaders = [
+  'ชื่อกิจกรรม',
+  'บรรลุผลที่คาดว่าจะได้รับ',
+  'ค่า X̄ (X Bar) ความพึงพอใจ',
+  'ค่า SD ความพึงพอใจ',
+  'ค่า SD ผลการบริหารกิจกรรม',
+  'ประเภทเอกสารสำหรับการตรวจค่าสถิติ'
+];
+var reportValidationTypes = {
+  REPORT_ACTIVITY: 'รายงานผลการดำเนินกิจกรรม',
+  NON_COMPLETED_MEMO: 'บันทึกข้อความชี้แจงไม่ดำเนินกิจกรรม',
+  OTHER_DOCUMENT: 'เอกสารอื่น ๆ'
+};
 var reportNameAllowedPrefixes = [
   'รายงานผลการดำเนินกิจกรรม',
   'บันทึกข้อความชี้แจงไม่ดำเนินกิจกรรม',
@@ -69,6 +83,125 @@ function ensureReportNoActivityNameColumn_(sheet) {
   }
 }
 
+
+
+function isLegacy2568Document_(documentNumber) {
+  return /\/2568\s*$/.test(String(documentNumber || '').trim());
+}
+
+function resolveReportValidationType_(reportName, documentNumber, selectedType, strict) {
+  var name = String(reportName || '').trim();
+  var selected = String(selectedType || '').trim();
+
+  if (name.indexOf('รายงานผลการดำเนินกิจกรรม') === 0) {
+    return {
+      type: 'REPORT_ACTIVITY',
+      label: reportValidationTypes.REPORT_ACTIVITY,
+      mode: 'AUTO_PREFIX',
+      requiresStatistics: true
+    };
+  }
+
+  if (name.indexOf('บันทึกข้อความชี้แจงไม่ดำเนินกิจกรรม') === 0) {
+    return {
+      type: 'NON_COMPLETED_MEMO',
+      label: reportValidationTypes.NON_COMPLETED_MEMO,
+      mode: 'AUTO_PREFIX',
+      requiresStatistics: false
+    };
+  }
+
+  if (name.indexOf('เอกสาร') === 0) {
+    return {
+      type: 'OTHER_DOCUMENT',
+      label: reportValidationTypes.OTHER_DOCUMENT,
+      mode: 'AUTO_PREFIX',
+      requiresStatistics: false
+    };
+  }
+
+  if (isLegacy2568Document_(documentNumber)) {
+    if (selected) {
+      if (!reportValidationTypes[selected]) {
+        throw new Error('ประเภทเอกสารสำหรับการตรวจค่าสถิติไม่ถูกต้อง');
+      }
+      return {
+        type: selected,
+        label: reportValidationTypes[selected],
+        mode: 'LEGACY_2568_SELECTED',
+        requiresStatistics: selected === 'REPORT_ACTIVITY'
+      };
+    }
+    if (strict) {
+      throw new Error('รายการเอกสาร /2568 นี้ไม่สามารถจำแนกประเภทจากชื่อเอกสารได้ กรุณาเลือกประเภทเอกสารสำหรับการตรวจค่าสถิติก่อนส่งรายงาน');
+    }
+    return {
+      type: '',
+      label: '',
+      mode: 'LEGACY_2568_UNKNOWN',
+      requiresStatistics: false
+    };
+  }
+
+  if (strict) {
+    throw new Error('ชื่อเอกสารไม่เป็นไปตามมาตรฐานใหม่ กรุณาติดต่อผู้ดูแลระบบเพื่อตรวจสอบชื่อเอกสารก่อนส่งรายงาน');
+  }
+
+  return {
+    type: '',
+    label: '',
+    mode: 'INVALID_STANDARD_NAME',
+    requiresStatistics: false
+  };
+}
+
+function validateDecimalTwoPlaces_(value, min, max, fieldLabel, required) {
+  var text = String(value || '').trim();
+  if (!text) {
+    if (required) throw new Error(fieldLabel + ' จำเป็นต้องกรอก');
+    return '';
+  }
+
+  if (!/^\d+\.\d{2}$/.test(text)) {
+    throw new Error(fieldLabel + ' ต้องเป็นเลขทศนิยม 2 หลัก เช่น 4.50');
+  }
+
+  var numberValue = Number(text);
+  if (isNaN(numberValue) || numberValue < min || numberValue > max) {
+    throw new Error(fieldLabel + ' ต้องอยู่ระหว่าง ' + min.toFixed(2) + ' ถึง ' + max.toFixed(2));
+  }
+  return numberValue;
+}
+
+function ensureReportSubmitExtendedColumns_(sheet) {
+  if (!sheet) throw new Error("System Error: ไม่พบแผ่นงานชื่อ '" + reportSubmitSheetName + "'");
+
+  var existing = sheet.getRange(1, reportSubmitExtendedStartColumn, 1, reportSubmitExtendedHeaders.length).getValues()[0];
+  var shouldWriteHeaders = existing.every(function(value) { return String(value || '').trim() === ''; });
+
+  if (shouldWriteHeaders) {
+    sheet.getRange(1, reportSubmitExtendedStartColumn, 1, reportSubmitExtendedHeaders.length).setValues([reportSubmitExtendedHeaders]);
+    return;
+  }
+
+  for (var i = 0; i < reportSubmitExtendedHeaders.length; i++) {
+    var current = String(existing[i] || '').trim();
+    if (current !== reportSubmitExtendedHeaders[i]) {
+      var columnLetter = String.fromCharCode('T'.charCodeAt(0) + i);
+      throw new Error(
+        'ตรวจพบว่าคอลัมน์ ' + columnLetter + ' ของชีต ReportSubmit มีหัวคอลัมน์ "' + current +
+        '" อยู่แล้ว ระบบจึงไม่บันทึกข้อมูลใหม่เพื่อป้องกันการเขียนทับข้อมูลเดิม กรุณาตรวจสอบให้หัวคอลัมน์ T-Y ตรงกับที่ระบบกำหนด'
+      );
+    }
+  }
+}
+
+function getActivityNameFallback_(activityCode) {
+  var code = String(activityCode || '').trim().toUpperCase();
+  if (!code) return '';
+  var info = getActivityInfo(code);
+  return info ? String(info.activityName || '').trim() : '';
+}
 
 function getCurrentUserKey_() {
   var key = Session.getTemporaryActiveUserKey();
@@ -410,22 +543,34 @@ function getData(search, limit, page) {
 
 function getDocumentData(documentNumber) {
   requireAuth_('getDocumentData');
+  var docNo = String(documentNumber || '').trim();
   var spreadsheet = getSpreadsheet_();
   var sheet = spreadsheet.getSheetByName(sheetName);
   if (!sheet) return null;
   var data = sheet.getDataRange().getValues();
   data.shift();
   for (var i = 0; i < data.length; i++) {
-    if (data[i][1] === documentNumber) {
+    if (String(data[i][1] || '').trim() === docNo) {
+      var activityCode = String(data[i][10] || '').trim().toUpperCase();
+      var activityName = String(data[i][11] || '').trim();
+      if (!activityName && activityCode) {
+        activityName = getActivityNameFallback_(activityCode);
+      }
+      var reportName = data[i][2];
+      var validationInfo = resolveReportValidationType_(reportName, docNo, '');
       return {
-        reportName: data[i][2], // C
+        reportName: reportName, // C
         adminGroup: data[i][3], // D
         workGroup: data[i][4], // E
         responsiblePerson: data[i][5], // F
         actionPlanProject: data[i][8], // I
         email: data[i][9], // J
-        activityCode: data[i][10], // K
-        activityName: data[i][11] || '' // L
+        activityCode: activityCode, // K
+        activityName: activityName, // L หรือ fallback จาก LinkBAP
+        reportValidationType: validationInfo.type,
+        reportValidationTypeLabel: validationInfo.label,
+        reportValidationMode: validationInfo.mode,
+        requiresStatistics: validationInfo.requiresStatistics
       };
     }
   }
@@ -527,10 +672,54 @@ function saveData(reportName, adminGroup, workGroup, responsiblePerson, actionPl
 // [EDITED] 2. ฟังก์ชันส่งรายงานฉบับสมบูรณ์
 // =========================================================================
 
-function saveReport(documentNumber, fileId, quantitativeTarget, quantitativeResult, qualitativeTarget, qualitativeResult, expectedTarget, expectedResult, actionPlanProject, allocatedBudget, actualBudget, loggedUser) {
+function saveReport(documentNumber, fileId, quantitativeTarget, quantitativeResult, qualitativeTarget, qualitativeResult, expectedTarget, expectedResult, actionPlanProject, allocatedBudget, actualBudget, activityName, expectedAchievementResult, satisfactionXbar, satisfactionSD, managementSD, reportValidationType, loggedUser) {
   var session = requireAuth_('saveReport');
   var documentData = getDocumentData(documentNumber);
   if (!documentData) throw new Error('Invalid document number');
+
+  // Backward compatibility: หน้าเว็บเก่าจะส่ง loggedUser มาเป็น argument ที่ 12
+  if (arguments.length <= 12) {
+    loggedUser = activityName;
+    activityName = documentData.activityName || '';
+    expectedAchievementResult = '';
+    satisfactionXbar = '';
+    satisfactionSD = '';
+    managementSD = '';
+    reportValidationType = '';
+  }
+
+  documentNumber = String(documentNumber || '').trim();
+  quantitativeTarget = String(quantitativeTarget || '').trim();
+  quantitativeResult = String(quantitativeResult || '').trim();
+  qualitativeTarget = String(qualitativeTarget || '').trim();
+  qualitativeResult = String(qualitativeResult || '').trim();
+  expectedTarget = String(expectedTarget || '').trim();
+  expectedResult = String(expectedResult || '').trim();
+  actionPlanProject = String(actionPlanProject || documentData.actionPlanProject || '').trim();
+  allocatedBudget = String(allocatedBudget || '').trim();
+  actualBudget = String(actualBudget || '').trim();
+  activityName = String(activityName || documentData.activityName || '').trim();
+  expectedAchievementResult = String(expectedAchievementResult || '').trim();
+  satisfactionXbar = String(satisfactionXbar || '').trim();
+  satisfactionSD = String(satisfactionSD || '').trim();
+  managementSD = String(managementSD || '').trim();
+  reportValidationType = String(reportValidationType || '').trim();
+
+  if (!quantitativeTarget || !quantitativeResult || !qualitativeTarget || !qualitativeResult || !expectedTarget || !actionPlanProject || !allocatedBudget || !actualBudget) {
+    throw new Error('กรุณากรอกข้อมูลรายงานให้ครบถ้วน');
+  }
+
+  if (expectedAchievementResult !== 'บรรลุ' && expectedAchievementResult !== 'ไม่บรรลุ') {
+    throw new Error('กรุณาเลือกผลบรรลุผลที่คาดว่าจะได้รับ');
+  }
+
+  var validationInfo = resolveReportValidationType_(documentData.reportName, documentNumber, reportValidationType, true);
+  var requiresStatistics = validationInfo.requiresStatistics === true;
+
+  var managementXbarValue = validateDecimalTwoPlaces_(expectedResult, 0.01, 5.00, 'ค่า X̄ (X Bar) ของผลการบริหารกิจกรรม', requiresStatistics);
+  var satisfactionXbarValue = validateDecimalTwoPlaces_(satisfactionXbar, 0.01, 5.00, 'ค่า X̄ (X Bar) ความพึงพอใจ', requiresStatistics);
+  var satisfactionSDValue = validateDecimalTwoPlaces_(satisfactionSD, 0.01, 1.00, 'ค่า SD ความพึงพอใจ', requiresStatistics);
+  var managementSDValue = validateDecimalTwoPlaces_(managementSD, 0.01, 1.00, 'ค่า SD ผลการบริหารกิจกรรม', requiresStatistics);
 
   var auditUser = session.displayName || session.username || documentData.responsiblePerson || loggedUser;
   var fileUrl;
@@ -545,7 +734,9 @@ function saveReport(documentNumber, fileId, quantitativeTarget, quantitativeResu
   var reportSubmitSheet = ss.getSheetByName(reportSubmitSheetName);
   if (!reportSubmitSheet) throw new Error("System Error: ไม่พบแผ่นงานชื่อ '" + reportSubmitSheetName + "'");
 
-  var newRowData = new Array(19).fill('');
+  ensureReportSubmitExtendedColumns_(reportSubmitSheet);
+
+  var newRowData = new Array(25).fill(''); // A-Y
   newRowData[1] = documentNumber; // B
   newRowData[2] = documentData.reportName; // C
   newRowData[3] = documentData.adminGroup; // D
@@ -557,12 +748,18 @@ function saveReport(documentNumber, fileId, quantitativeTarget, quantitativeResu
   newRowData[9] = quantitativeResult; // J
   newRowData[10] = qualitativeResult; // K
   newRowData[11] = expectedTarget; // L
-  newRowData[12] = parseFloat(expectedResult); // M
+  newRowData[12] = managementXbarValue === '' ? '' : managementXbarValue; // M: คงคอลัมน์เดิม
   newRowData[14] = actionPlanProject; // O
   newRowData[15] = documentData.email; // P
   newRowData[16] = allocatedBudget; // Q
   newRowData[17] = actualBudget; // R
   newRowData[18] = (documentData.activityCode || '').toString().trim().toUpperCase(); // S
+  newRowData[19] = activityName; // T
+  newRowData[20] = expectedAchievementResult; // U
+  newRowData[21] = satisfactionXbarValue === '' ? '' : satisfactionXbarValue; // V
+  newRowData[22] = satisfactionSDValue === '' ? '' : satisfactionSDValue; // W
+  newRowData[23] = managementSDValue === '' ? '' : managementSDValue; // X
+  newRowData[24] = validationInfo.label || validationInfo.type; // Y
 
   // คงตรรกะเดิม: append รายการธุรกรรมก่อน แล้วจึง update master list ภายใต้ lock
   reportSubmitSheet.appendRow(newRowData);
@@ -578,7 +775,7 @@ function saveReport(documentNumber, fileId, quantitativeTarget, quantitativeResu
     var data = reportNoSheet.getDataRange().getValues();
     var updated = false;
     for (var i = 0; i < data.length; i++) {
-      if (data[i][1] === documentNumber) {
+      if (String(data[i][1] || '').trim() === documentNumber) {
         reportNoSheet.getRange(i + 1, 8).setValue(fileUrl); // H
         updated = true;
         break;
