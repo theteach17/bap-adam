@@ -1,0 +1,1387 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <base target="_top">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ระบบศูนย์สารสนเทศกลาง KIC</title>
+  
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  
+  <style>
+    :root {
+      --sidebar-width: 270px;
+      /* Theme Red-Yellow Pastel */
+      --primary-red: #d63031;
+      --soft-red: #ff7675;
+      --soft-yellow: #ffeaa7;
+      --soft-orange: #fab1a0;
+      --bg-cream: #fffdf9;
+      --text-dark: #2d3436;
+      --sidebar-active: #fff5e6;
+    }
+
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: 'Chakra Petch', sans-serif;
+      background-color: var(--bg-cream);
+      overflow-x: hidden;
+      display: flex;
+    }
+
+    /* --- Sidebar Styling --- */
+    .sidebar {
+      width: var(--sidebar-width);
+      height: 100vh;
+      background-color: #ffffff;
+      position: fixed;
+      left: 0;
+      top: 0;
+      border-right: 1px solid #ffeaa7;
+      display: flex;
+      flex-direction: column;
+      z-index: 1050; /* เพิ่ม Layer ให้สูงกว่า Content */
+      box-shadow: 2px 0 10px rgba(214, 48, 49, 0.05);
+      transition: transform 0.3s ease-in-out; /* เพิ่ม Animation เลื่อนเข้า-ออก */
+    }
+
+    .sidebar-header {
+      padding: 25px 20px;
+      display: flex;
+      align-items: center;
+      border-bottom: 2px solid var(--soft-yellow);
+      background: linear-gradient(to right, #fff, #fffbf0);
+    }
+
+    .sidebar-header img {
+      width: 50px;
+      height: 50px;
+      margin-right: 12px;
+      object-fit: contain;
+    }
+
+    .sidebar-header .brand-text {
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: var(--primary-red);
+      line-height: 1.2;
+    }
+    
+    .sidebar-header .brand-text span {
+        font-size: 0.85rem;
+        color: #e17055;
+        font-weight: 500;
+    }
+
+    .sidebar-menu {
+      padding: 20px;
+      flex-grow: 1;
+      overflow-y: auto;
+    }
+
+    .menu-label {
+      font-size: 0.8rem;
+      color: #b2bec3;
+      font-weight: 600;
+      margin-bottom: 10px;
+      padding-left: 10px;
+      text-transform: uppercase;
+    }
+
+    .nav-btn {
+      display: flex;
+      align-items: center;
+      width: 100%;
+      padding: 12px 15px;
+      margin-bottom: 8px;
+      border: none;
+      background: transparent;
+      border-radius: 12px;
+      color: #636e72;
+      text-decoration: none;
+      font-weight: 500;
+      transition: all 0.2s;
+      cursor: pointer;
+      text-align: left;
+    }
+
+    .nav-btn:hover {
+      background-color: var(--sidebar-active);
+      color: var(--primary-red);
+      transform: translateX(3px);
+    }
+
+    .nav-btn.active {
+      background-color: #ffe0d6;
+      color: #c0392b;
+      font-weight: 600;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+    }
+
+    .nav-btn i {
+      width: 25px;
+      margin-right: 10px;
+      font-size: 1.2rem;
+      text-align: center;
+    }
+    
+    /* Logout Section */
+    .logout-section {
+        padding: 15px 20px;
+        border-top: 1px solid #ffeaa7;
+        background-color: #fffbf5;
+    }
+    
+    .btn-logout {
+        width: 100%;
+        background-color: #fff;
+        border: 1px solid var(--primary-red);
+        color: var(--primary-red);
+        border-radius: 10px;
+        padding: 10px;
+        transition: all 0.3s;
+        font-weight: 600;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+    
+    .btn-logout:hover {
+        background-color: var(--primary-red);
+        color: #fff;
+    }
+
+    /* --- Main Content --- */
+    .main-content {
+      margin-left: var(--sidebar-width);
+      width: calc(100% - var(--sidebar-width));
+      min-height: 100vh;
+      padding: 0 0 50px 0;
+      transition: margin-left 0.3s ease-in-out; /* เพิ่ม Animation */
+    }
+
+    /* Top Bar Layout Fix */
+    .top-bar {
+      background-color: #ffffff;
+      padding: 10px 30px;
+      height: 80px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid #ffeaa7;
+      position: sticky;
+      top: 0;
+      z-index: 900;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.02);
+    }
+
+    .page-title {
+        display: flex;
+        align-items: center;
+        gap: 15px;
+    }
+
+    .page-title h4 {
+        margin: 0;
+        font-weight: 700;
+        color: #2d3436;
+        display: flex;
+        align-items: center;
+    }
+
+    /* เพิ่ม CSS ปุ่ม Hamburger */
+    .btn-hamburger {
+        display: none; /* ซ่อนใน Desktop */
+        background: none;
+        border: none;
+        font-size: 1.5rem;
+        color: #2d3436;
+        cursor: pointer;
+        padding: 5px;
+    }
+
+    .top-right-section {
+        display: flex;
+        align-items: center;
+        gap: 20px;
+    }
+
+    /* User Profile Widget */
+    .user-profile {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        background: #fff5e6;
+        padding: 6px 15px 6px 8px;
+        border-radius: 30px;
+        border: 1px solid #ffeaa7;
+        height: 50px;
+    }
+    
+    .user-avatar {
+        width: 38px;
+        height: 38px;
+        background: linear-gradient(135deg, var(--soft-red), var(--soft-orange));
+        color: white;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: bold;
+        font-size: 1.1rem;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    }
+    
+    .user-info {
+        display: flex;
+        flex-direction: column;
+        line-height: 1.2;
+    }
+    
+    .user-name {
+        font-weight: 700;
+        font-size: 0.85rem;
+        color: #d63031;
+    }
+    
+    .current-time {
+        font-size: 0.7rem;
+        color: #e17055;
+    }
+
+    .content-wrapper {
+      padding: 30px;
+    }
+
+    /* --- Table Styles --- */
+    .content-card {
+      background: #fff;
+      border-radius: 16px;
+      border: 1px solid #ffeaa7;
+      box-shadow: 0 5px 20px rgba(0, 0, 0, 0.02);
+      overflow: hidden;
+      margin-top: 10px;
+    }
+    
+    .table-responsive {
+        overflow-x: auto;
+    }
+
+    .table {
+        margin-bottom: 0;
+        table-layout: auto; 
+    }
+
+    /* Table Header */
+    .table thead th {
+      background-color: #fff8e1;
+      color: #c0392b;
+      font-weight: 700;
+      padding: 15px 10px;
+      border-bottom: 2px solid #fab1a0;
+      text-align: center;
+      white-space: nowrap;
+      vertical-align: middle;
+      font-size: 0.9rem;
+    }
+
+    /* Table Body */
+    .table tbody td {
+      padding: 12px 10px;
+      vertical-align: top;
+      color: #2d3436;
+      border-bottom: 1px solid #fff0f0;
+      font-size: 0.9rem;
+      white-space: normal;
+      word-wrap: break-word;
+      max-width: 250px;
+    }
+    
+    .text-center-col {
+        text-align: center;
+    }
+
+    .table-striped tbody tr:nth-of-type(odd) {
+      background-color: #fffdf9;
+    }
+    
+    .table-striped tbody tr:hover {
+      background-color: #fff0f0;
+    }
+
+    /* Action Buttons in table */
+    .btn-action {
+        padding: 4px 10px;
+        font-size: 0.8rem;
+        border-radius: 15px;
+        white-space: nowrap;
+    }
+    .btn-view { border: 1px solid #00b894; color: #00b894; background: #edfffa; }
+    .btn-view:hover { background: #00b894; color: #fff; }
+    
+    .btn-file { border: 1px solid #0984e3; color: #0984e3; background: #eff6ff; }
+    .btn-file:hover { background: #0984e3; color: #fff; }
+
+    /* Search Box */
+    .search-group {
+      display: flex;
+      align-items: center;
+      background: #fff;
+      border-radius: 50px;
+      padding: 8px 15px;
+      border: 1px solid #ffeaa7;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.02);
+      width: 300px;
+      height: 40px;
+    }
+
+    .search-group input {
+      border: none;
+      background: transparent;
+      outline: none;
+      padding: 0 10px;
+      font-size: 0.9rem;
+      width: 100%;
+      color: #636e72;
+    }
+    
+    .search-group i { color: #fab1a0; }
+
+    /* Pagination */
+    .pagination-container {
+        padding: 15px 20px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-top: 1px solid #fff0f0;
+        background: #fff;
+    }
+
+    .pagination-btn {
+        background: #fff;
+        border: 1px solid #ffeaa7;
+        padding: 6px 14px;
+        border-radius: 8px;
+        color: #d63031;
+        font-size: 0.9rem;
+        transition: all 0.2s;
+    }
+
+    .pagination-btn:hover {
+        background: #ff7675;
+        color: #fff;
+        border-color: #ff7675;
+    }
+
+    /* Footer Marquee */
+    .footer-marquee {
+      position: fixed;
+      bottom: 0;
+      left: var(--sidebar-width);
+      width: calc(100% - var(--sidebar-width));
+      background: #2d3436;
+      color: #fff;
+      padding: 8px 0;
+      z-index: 1000;
+      font-size: 0.85rem;
+      transition: left 0.3s, width 0.3s; /* เพิ่ม Animation */
+    }
+
+    .footer-marquee img {
+      height: 20px;
+      margin: 0 10px;
+      vertical-align: middle;
+    }
+
+    /* Modals Colors */
+    .modal-content {
+        border-radius: 15px;
+        border: none;
+        overflow: hidden;
+    }
+    .modal-header {
+        color: white;
+        border-bottom: none;
+        padding: 15px 20px;
+    }
+    .modal-title { font-weight: 600; font-size: 1.1rem; }
+    
+    /* Modal Header Colors based on type */
+    .modal-header-request { background: linear-gradient(135deg, #ff9f43, #ff6b6b); }
+    .modal-header-report { background: linear-gradient(135deg, #00b894, #00cec9); }
+    .modal-header-warn { background: linear-gradient(135deg, #d63031, #e17055); }
+
+    .form-label { font-weight: 600; color: #2d3436; font-size: 0.9rem; margin-bottom: 5px; }
+    .form-text { font-size: 0.8rem; color: #b2bec3; }
+    
+    .sort-icon { font-size: 0.8em; margin-left: 5px; opacity: 0.4; }
+    th.sort-asc span.sort-icon.asc, th.sort-desc span.sort-icon.desc { opacity: 1; color: #d63031; }
+
+    /* --- เพิ่ม CSS Mobile Overlay --- */
+    .sidebar-overlay {
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100vw;
+        height: 100vh;
+        background-color: rgba(0, 0, 0, 0.5);
+        z-index: 1040; /* ต่ำกว่า Sidebar (1050) แต่สูงกว่า Content */
+        opacity: 0;
+        transition: opacity 0.3s ease-in-out;
+    }
+    
+    .sidebar-overlay.active {
+        display: block;
+        opacity: 1;
+    }
+
+    /* Responsive */
+    @media (max-width: 992px) {
+        /* ซ่อน Sidebar ไปทางซ้ายในหน้าจอมือถือ */
+        .sidebar { transform: translateX(-100%); }
+        /* แสดง Sidebar เมื่อมี Class 'active' */
+        .sidebar.active { transform: translateX(0); }
+        
+        .main-content { margin-left: 0; width: 100%; }
+        .footer-marquee { left: 0; width: 100%; }
+        
+        .top-bar { height: auto; padding: 15px; flex-direction: column; align-items: flex-start; gap: 15px; }
+        
+        /* จัดเรียง Title กับ ปุ่ม Hamburger */
+        .page-title { width: 100%; display: flex; align-items: center; justify-content: flex-start; }
+        
+        .top-right-section { width: 100%; justify-content: space-between; }
+        .search-group { width: 100%; max-width: none; }
+        
+        /* แสดงปุ่ม Hamburger บนมือถือ */
+        .btn-hamburger { display: block !important; margin-right: 15px; }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="sidebar-overlay" id="sidebarOverlay" onclick="toggleSidebar()"></div>
+
+  <div class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <img src="https://img2.pic.in.th/pic/logofd3322a65d133ac4.png" alt="Logo">
+      <div class="brand-text">
+        ศูนย์สารสนเทศกลาง<br><span>KIC System</span>
+      </div>
+    </div>
+    
+    <div class="sidebar-menu">
+      <div class="menu-label">เมนูหลัก</div>
+      
+      <button class="nav-btn active" onclick="location.reload()">
+        <i class="fas fa-th-large text-warning"></i> ภาพรวมระบบ
+      </button>
+      
+      <div class="menu-label mt-4">การจัดการเอกสาร</div>
+      
+      <button class="nav-btn" onclick="showForm()">
+        <i class="fas fa-plus-circle text-success"></i> ขอเลขทะเบียนเอกสาร
+      </button>
+      
+      <button class="nav-btn" onclick="showReportForm()">
+        <i class="fas fa-file-signature text-primary"></i> ส่งรายงานฉบับสมบูรณ์
+      </button>
+      
+      <button class="nav-btn" onclick="showNonCompletedProjectForm()">
+        <i class="fas fa-exclamation-triangle text-danger"></i> แจ้งกิจกรรมที่ไม่ได้ดำเนินการ
+      </button>
+    </div>
+    
+    <div class="logout-section">
+        <button class="btn-logout" onclick="logout()">
+            <i class="fas fa-sign-out-alt me-2"></i> ออกจากระบบ
+        </button>
+        <div class="text-center mt-2 text-muted" style="font-size:0.7rem;">
+            v.2.0.0<br>พัฒนาโดยงานแผนงานและสารสนเทศโรงเรียน
+        </div>
+    </div>
+  </div>
+
+  <div class="main-content">
+    
+    <div class="top-bar">
+      <div class="page-title">
+        <button class="btn-hamburger" onclick="toggleSidebar()">
+            <i class="fas fa-bars"></i>
+        </button>
+        <h4 class="m-0"><i class="fas fa-list-alt me-2 text-warning"></i>รายการเอกสารซึ่งขึ้นทะเบียนในระบบศูนย์สารสนเทศกลาง</h4>
+      </div>
+      
+      <div class="top-right-section">
+        <div class="search-group">
+            <i class="fas fa-search"></i>
+            <input type="text" id="search" placeholder="พิมพ์เพื่อค้นหาเอกสาร...">
+        </div>
+        
+        <div class="user-profile">
+            <div class="user-avatar" id="userAvatar">U</div>
+            <div class="user-info">
+                <div class="user-name" id="displayUserName">กำลังโหลด...</div>
+                <div class="current-time" id="clock">--:--:--</div>
+            </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="content-wrapper">
+      
+      <div class="content-card">
+        
+        <div class="p-3 d-flex justify-content-between align-items-center border-bottom" style="background: #fffdf9;">
+             <div class="d-flex align-items-center" style="font-size: 0.9rem; color: #636e72;">
+                <span class="me-2">แสดง</span>
+                <input type="number" id="limit" class="form-control form-control-sm text-center border-warning" style="width: 60px;" value="10">
+                <span class="ms-2">รายการ</span>
+            </div>
+            <div>
+                <button class="btn btn-sm btn-outline-warning rounded-pill px-3" onclick="fetchData()"><i class="fas fa-sync-alt me-1"></i> รีเฟรช</button>
+            </div>
+        </div>
+
+        <div class="table-responsive">
+          <table class="table table-striped table-hover" id="dataTable" style="width: 100%;">
+            <thead>
+              <tr id="header"></tr>
+            </thead>
+            <tbody id="tableBody"></tbody>
+          </table>
+        </div>
+
+        <div class="pagination-container">
+          <div>
+             <span id="pageInfo" class="text-muted fw-bold small">Loading...</span>
+          </div>
+          <div class="d-flex gap-2">
+            <button class="pagination-btn" id="firstPage" onclick="goToPage(1)"><i class="fas fa-angle-double-left"></i></button>
+            <button class="pagination-btn" id="prevPage" onclick="changePage(-1)"><i class="fas fa-angle-left"></i></button>
+            <button class="pagination-btn" id="nextPage" onclick="changePage(1)"><i class="fas fa-angle-right"></i></button>
+            <button class="pagination-btn" id="lastPage" onclick="goToPage(totalPage)"><i class="fas fa-angle-double-right"></i></button>
+          </div>
+        </div>
+      </div>
+      
+    </div> </div> <div class="footer-marquee">
+    <marquee id="marquee" scrollamount="5">
+      <img src="https://img2.pic.in.th/pic/logofd3322a65d133ac4.png" alt="Logo">
+      ยินดีต้อนรับสู่ศูนย์สารสนเทศกลาง Klaeng Information Center : งานแผนงานและสารสนเทศโรงเรียน กลุ่มบริหารงบประมาณ โรงเรียนแกลง วิทยสถาวร : รวดเร็ว ฉับไว โปร่งใส ตรวจสอบได้ : 
+      <span id="reportCounts">Loading stats...</span>
+    </marquee>
+  </div>
+
+  <div id="formModal" class="modal fade" tabindex="-1">
+    <div class="modal-dialog modal-xl modal-dialog-centered">
+      <div class="modal-content shadow-lg">
+        <div class="modal-header modal-header-request">
+          <h5 class="modal-title"><i class="fas fa-plus-circle me-2"></i> ขอเลขทะเบียนเอกสาร</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body p-4">
+          <form id="dataForm">
+             <div class="alert alert-warning border-0 shadow-sm mb-3">
+               <small><i class="fas fa-info-circle me-1"></i> กรอกรหัสกิจกรรมเพื่อดึงข้อมูลอัตโนมัติ (ถ้ามี)</small>
+            </div>
+            
+            <div class="mb-3">
+              <label class="form-label">รหัสกิจกรรม</label>
+              <input type="text" class="form-control" id="activityCode" placeholder="เช่น PR01AM01" oninput="handleActivityCodeInput(this.value)">
+              <div class="form-text">หากกรอกรหัสกิจกรรม ระบบจะดึงข้อมูลบางส่วนมาแสดงให้โดยอัตโนมัติ</div>
+            </div>
+
+            <div class="mb-3">
+              <label for="reportName" class="form-label">ชื่อเอกสาร <span class="text-danger">*</span></label>
+              <input type="text" class="form-control" id="reportName" required placeholder="โปรดระบุรายละเอียดเอกสารให้ชัดเจน เช่น รายงานผลการดำเนินงาน...">
+            </div>
+
+            <div class="row g-3 mb-3">
+                <div class="col-md-6">
+                    <label class="form-label">กลุ่มบริหาร <span class="text-danger">*</span></label>
+                    <select class="form-select" id="adminGroup" required onchange="updateWorkGroups()">
+                        <option value="" disabled selected>เลือกกลุ่มบริหาร</option>
+                    </select>
+                    <div class="form-text">หากเป็นกลุ่มโครงการที่ไม่อยู่ในแผนปฏิบัติการประจำปี ให้เลือกกลุ่มบริหารใหม่ให้ถูกต้องก่อนกดบันทึกเสมอ</div>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">กลุ่มงาน <span class="text-danger">*</span></label>
+                    <select class="form-select" id="workGroup" required>
+                        <option value="" disabled selected>เลือกกลุ่มงาน</option>
+                    </select>
+                </div>
+            </div>
+            
+            <div class="row g-3 mb-3">
+                <div class="col-md-6">
+                    <label class="form-label">ผู้รับผิดชอบ <span class="text-danger">*</span></label>
+                    <input type="text" class="form-control" id="responsiblePerson" required placeholder="ระบุชื่อผู้รับผิดชอบ">
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Email <span class="text-danger">*</span></label>
+                    <input type="email" class="form-control" id="email" required pattern="[a-zA-Z0-9._%+-]+@g\.klaeng\.ac\.th" placeholder="xxx@g.klaeng.ac.th">
+                </div>
+            </div>
+
+            <div class="mb-3">
+              <label class="form-label">โครงการตามแผนปฏิบัติการ <span class="text-danger">*</span></label>
+              <select class="form-select" id="actionPlanProject" required>
+                  <option value="" disabled selected>เลือกโครงการตามแผนปฏิบัติการ</option>
+              </select>
+            </div>
+          </form>
+        </div>
+        <div class="modal-footer bg-light">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">ปิด</button>
+          <button type="button" class="btn btn-warning text-dark fw-bold" onclick="validateAndSaveData()">บันทึกข้อมูล</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<div id="reportFormModal" class="modal fade" tabindex="-1">
+    <div class="modal-dialog modal-xl modal-dialog-centered">
+      <div class="modal-content shadow-lg">
+        <div class="modal-header modal-header-report">
+          <h5 class="modal-title"><i class="fas fa-file-check me-2"></i> ส่งรายงานฉบับสมบูรณ์</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body p-4">
+          <form id="reportForm">
+            <div class="card border-0 shadow-sm mb-3 bg-light">
+                <div class="card-body">
+                    <label class="form-label fw-bold">ค้นหาหมายเลขเอกสาร <span class="text-danger">*</span></label>
+                    <div class="input-group mt-1">
+                        <input type="text" class="form-control" id="documentNumber" required onchange="fetchDocumentData()" placeholder="กรอกหมายเลขเอกสาร (เช่น บว 123/2568) แล้วกด Enter">
+                        <span class="input-group-text bg-white"><i class="fas fa-search text-warning"></i></span>
+                    </div>
+                </div>
+            </div>
+            
+            <h6 class="text-muted border-bottom pb-2 mb-3">ข้อมูลทั่วไป (Read Only)</h6>
+            <div class="row g-3 mb-3">
+                <div class="col-md-6"><label class="form-label">รหัสกิจกรรม</label><input type="text" class="form-control bg-light" id="activityCodeReportForm" readonly></div>
+                <div class="col-md-6"><label class="form-label">ชื่อรายงาน</label><input type="text" class="form-control bg-light" id="reportNameReportForm" readonly></div>
+            </div>
+            <div class="mb-3"><label class="form-label">โครงการตามแผนฯ</label><input type="text" class="form-control bg-light" id="actionPlanProjectReportForm" readonly></div>
+            <div class="row g-3 mb-3">
+               <div class="col-md-6"><label class="form-label">กลุ่มบริหาร</label><input type="text" class="form-control bg-light" id="adminGroupReportForm" readonly></div>
+               <div class="col-md-6"><label class="form-label">กลุ่มงาน</label><input type="text" class="form-control bg-light" id="workGroupReportForm" readonly></div>
+            </div>
+            <div class="row g-3 mb-3">
+               <div class="col-md-6"><label class="form-label">ผู้รับผิดชอบ</label><input type="text" class="form-control bg-light" id="responsiblePersonReportForm" readonly></div>
+               <div class="col-md-6"><label class="form-label">Email</label><input type="text" class="form-control bg-light" id="emailReportForm" readonly></div>
+            </div>
+            
+            <hr class="my-4">
+            <h6 class="text-primary fw-bold mb-3">ผลการดำเนินงาน</h6>
+            
+            <div class="row g-3 mb-3">
+                <div class="col-md-6">
+                    <label class="form-label">เป้าหมายเชิงปริมาณ <span class="text-danger">*</span></label>
+                    <input type="text" class="form-control" id="quantitativeTarget" placeholder="ระบุเป้าหมายเชิงปริมาณ" required>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">ผลของเป้าหมายเชิงปริมาณ <span class="text-danger">*</span></label>
+                    <select class="form-select" id="quantitativeResult" required>
+                        <option value="" selected disabled>เลือกผลลัพธ์</option>
+                        <option value="บรรลุเป้าหมายเชิงปริมาณ">บรรลุเป้าหมายเชิงปริมาณ</option>
+                        <option value="ไม่บรรลุเป้าหมายเชิงปริมาณ">ไม่บรรลุเป้าหมายเชิงปริมาณ</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="row g-3 mb-3">
+                <div class="col-md-6">
+                    <label class="form-label">เป้าหมายเชิงคุณภาพ <span class="text-danger">*</span></label>
+                    <input type="text" class="form-control" id="qualitativeTarget" placeholder="ระบุเป้าหมายเชิงคุณภาพ" required>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">ผลของเป้าหมายเชิงคุณภาพ <span class="text-danger">*</span></label>
+                    <select class="form-select" id="qualitativeResult" required>
+                        <option value="" selected disabled>เลือกผลลัพธ์</option>
+                        <option value="บรรลุเป้าหมายเชิงคุณภาพ">บรรลุเป้าหมายเชิงคุณภาพ</option>
+                        <option value="ไม่บรรลุเป้าหมายเชิงคุณภาพ">ไม่บรรลุเป้าหมายเชิงคุณภาพ</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="row g-3 mb-3">
+                <div class="col-md-6">
+                    <label class="form-label">ผลที่คาดว่าจะได้รับ <span class="text-danger">*</span></label>
+                    <input type="text" class="form-control" id="expectedTarget" required>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">ค่า X̄ (X Bar) ของผลการบริหารกิจกรรม <span class="text-danger">*</span></label>
+                    <input type="number" class="form-control" id="expectedResult" step="0.01" required placeholder="ตัวเลขเท่านั้น">
+                </div>
+            </div>
+
+            <div class="row g-3 mb-3">
+                <div class="col-md-6">
+                    <label class="form-label">งบประมาณที่ได้รับจัดสรร <span class="text-danger">*</span></label>
+                    <input type="number" class="form-control" id="allocatedBudget" required>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">งบประมาณที่ใช้จริง <span class="text-danger">*</span></label>
+                    <input type="number" class="form-control" id="actualBudget" required>
+                </div>
+            </div>
+
+            <div class="mb-3 pt-3 border-top">
+              <label class="form-label text-success"><i class="fas fa-cloud-upload-alt me-2"></i> อัปโหลดไฟล์ PDF <span class="text-danger">*</span></label>
+              <input type="file" class="form-control" id="fileUploadReport" accept=".pdf" required>
+            </div>
+          </form>
+        </div>
+        <div class="modal-footer bg-light">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">ปิด</button>
+          <button type="button" class="btn btn-success" onclick="validateAndSaveReport()">ส่งรายงาน</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="nonCompletedProjectFormModal" class="modal fade" tabindex="-1">
+    <div class="modal-dialog modal-xl modal-dialog-centered">
+      <div class="modal-content shadow-lg">
+        <div class="modal-header modal-header-warn">
+          <h5 class="modal-title"><i class="fas fa-exclamation-triangle me-2"></i> ส่งบันทึกข้อความชี้แจงกิจกรรมที่ไม่ได้ดำเนินการ</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body p-4">
+          <form id="nonCompletedProjectForm">
+            
+            <div class="card border-0 shadow-sm mb-3 bg-light">
+                <div class="card-body">
+                    <label class="form-label fw-bold">ค้นหาหมายเลขเอกสาร <span class="text-danger">*</span></label>
+                    <div class="input-group mt-1">
+                        <input type="text" class="form-control" id="documentNumberNonCompleted" required onchange="fetchDocumentDataForNonCompleted()" placeholder="กรอกหมายเลขเอกสาร (เช่น บว 123/2568) แล้วกด Enter">
+                        <span class="input-group-text bg-white"><i class="fas fa-search text-warning"></i></span>
+                    </div>
+                    <div class="form-text mt-2 text-muted">ระบบจะดึงข้อมูลที่เคยขึ้นทะเบียนไว้มาแสดงให้โดยอัตโนมัติ</div>
+                </div>
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label">ชื่อกิจกรรมที่ไม่ได้ดำเนินการ <span class="text-danger">*</span></label>
+                <input type="text" class="form-control" id="projectName" required placeholder="ระบุชื่อกิจกรรม">
+            </div>
+            
+            <div class="mb-3">
+                <label class="form-label">โครงการตามแผนปฏิบัติการ <span class="text-danger">*</span></label>
+                <select class="form-select" id="actionPlanProjectNonCompleted" required>
+                    <option value="" disabled selected>เลือกโครงการตามแผนปฏิบัติการ</option>
+                </select>
+            </div>
+            
+            <div class="row g-3 mb-3">
+                <div class="col-md-6">
+                    <label class="form-label">กลุ่มบริหาร <span class="text-danger">*</span></label>
+                    <select class="form-select" id="adminGroupNonCompleted" required onchange="updateWorkGroupsNonCompleted()">
+                        <option value="" disabled selected>เลือกกลุ่มบริหาร</option>
+                    </select>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">กลุ่มงาน <span class="text-danger">*</span></label>
+                    <select class="form-select" id="workGroupNonCompleted" required>
+                        <option value="" disabled selected>เลือกกลุ่มงาน</option>
+                    </select>
+                </div>
+            </div>
+            
+            <div class="mb-3">
+                <label class="form-label">ชื่อผู้รับผิดชอบ <span class="text-danger">*</span></label>
+                <input type="text" class="form-control" id="responsiblePersonNonCompleted" required placeholder="ระบุชื่อผู้รับผิดชอบ">
+            </div>
+            
+            <div class="mb-3">
+                <label class="form-label">เหตุผลที่ไม่ดำเนินการโครงการ/กิจกรรม <span class="text-danger">*</span></label>
+                <input type="text" class="form-control" id="reasonNonCompleted" required placeholder="ระบุเหตุผลให้ชัดเจน">
+            </div>
+            
+            <div class="mb-3 pt-3 border-top">
+              <label class="form-label text-danger"><i class="fas fa-cloud-upload-alt me-2"></i> อัปโหลดไฟล์ PDF <span class="text-danger">*</span></label>
+              <input type="file" class="form-control" id="fileUploadNonCompleted" accept=".pdf" required>
+            </div>
+          </form>
+        </div>
+        <div class="modal-footer bg-light">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">ปิด</button>
+          <button type="button" class="btn btn-danger" onclick="validateAndSaveNonCompletedProject()">ส่งบันทึกข้อความ</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  
+  <script>
+    // --- Global Variables ---
+    let currentPage = 1;
+    let totalPage = 1;
+    let totalData = 0;
+    let currentData = [];
+    let sortOrder = 'asc';
+    let sortColumn = -1;
+    let workGroups = {};
+    const CHUNK_SIZE = 2 * 1024 * 1024; // 2MB Chunk Size
+
+    // --- Window OnLoad ---
+    window.onload = function() {
+      setupUserProfile();
+      fetchData();
+      updateMarquee();
+      setInterval(updateClock, 1000);
+    };
+
+    // --- User Profile (Fix: Use google.script.url.getLocation) ---
+    function setupUserProfile() {
+        google.script.url.getLocation(function(location) {
+            const name = location.parameter.name; 
+            if (name) {
+                document.getElementById('displayUserName').textContent = decodeURIComponent(name);
+                document.getElementById('userAvatar').textContent = decodeURIComponent(name).charAt(0).toUpperCase();
+            } else {
+                document.getElementById('displayUserName').textContent = "ผู้เยี่ยมชม";
+                document.getElementById('userAvatar').textContent = "G";
+            }
+        });
+    }
+
+    function updateClock() {
+        const now = new Date();
+        const options = { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false };
+        document.getElementById('clock').textContent = now.toLocaleDateString('th-TH', options);
+    }
+
+    // --- เพิ่มฟังก์ชัน toggleSidebar สำหรับมือถือ ---
+    function toggleSidebar() {
+        const sidebar = document.getElementById('sidebar');
+        const overlay = document.getElementById('sidebarOverlay');
+        sidebar.classList.toggle('active');
+        overlay.classList.toggle('active');
+    }
+
+    // --- แก้ไขฟังก์ชัน Logout ให้ดึง URL แบบ Dynamic ---
+    function logout() {
+        Swal.fire({
+            title: 'ออกจากระบบ?',
+            text: "คุณต้องการออกจากระบบใช่หรือไม่",
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#d63031',
+            cancelButtonColor: '#b2bec3',
+            confirmButtonText: 'ใช่, ออกจากระบบ',
+            cancelButtonText: 'ยกเลิก'
+        }).then((result) => {
+            if (result.isConfirmed) {
+                // เปลี่ยนจากการฮาร์ดโค้ด เป็นการเรียกฟังก์ชันดึง URL อัตโนมัติจากเซิร์ฟเวอร์
+                google.script.run.withSuccessHandler(function(url) {
+                    window.open(url, "_top");
+                }).getWebAppUrl();
+            }
+        });
+    }
+
+    // --- Table & Data Logic ---
+    document.getElementById('limit').addEventListener('input', changeLimit);
+    document.getElementById('search').addEventListener('input', fetchData);
+    
+    function changeLimit() {
+      currentPage = 1;
+      fetchData();
+    }
+
+    function fetchData() {
+      const limit = parseInt(document.getElementById('limit').value) || 10;
+      const search = document.getElementById('search').value || '';
+
+      google.script.run.withSuccessHandler(function(response) {
+        const headers = response.headers;
+        currentData = response.data;
+        totalData = response.total;
+        const tableBody = document.getElementById('tableBody');
+        const headerRow = document.getElementById('header');
+        
+        tableBody.innerHTML = '';
+        headerRow.innerHTML = '';
+
+        if (headers && totalData > 0) {
+           headers.forEach((headerText, index) => {
+            // ซ่อนคอลัมน์ Email (9) และ Activity Code (10)
+            if (headerText.toLowerCase().includes('email') || headerText.includes('อีเมล') || headerText.includes('รหัสกิจกรรม') || headerText.toLowerCase().includes('activity code')) {
+                return; 
+            }
+
+            const th = document.createElement('th');
+            th.textContent = headerText;
+            th.addEventListener('click', () => sortTable(index));
+            
+            const sortIconAsc = document.createElement('span');
+            sortIconAsc.classList.add('sort-icon', 'asc');
+            sortIconAsc.textContent = '▲';
+            const sortIconDesc = document.createElement('span');
+            sortIconDesc.classList.add('sort-icon', 'desc');
+            sortIconDesc.textContent = '▼';
+            th.appendChild(sortIconAsc);
+            th.appendChild(sortIconDesc);
+            headerRow.appendChild(th);
+          });
+
+          totalPage = Math.ceil(totalData / limit);
+          document.getElementById('pageInfo').innerText = `หน้า ${currentPage} จาก ${totalPage}`;
+          renderTableData(headers);
+        } else {
+          const tr = document.createElement('tr');
+          const td = document.createElement('td');
+          td.colSpan = 10;
+          td.textContent = 'ไม่พบข้อมูล';
+          td.className = "text-center py-4 text-muted";
+          tr.appendChild(td);
+          tableBody.appendChild(tr);
+        }
+      }).getData(search, limit, currentPage);
+    }
+
+    function renderTableData(headers) {
+      const tableBody = document.getElementById('tableBody');
+      tableBody.innerHTML = '';
+      
+      if (currentData.length > 0) {
+        currentData.forEach(row => {
+          const tr = document.createElement('tr');
+          row.forEach((cell, cellIndex) => {
+            
+            // Logic ซ่อนคอลัมน์
+            if(headers) {
+                const hText = headers[cellIndex];
+                if (hText && (hText.toLowerCase().includes('email') || hText.includes('อีเมล') || hText.includes('รหัสกิจกรรม') || hText.toLowerCase().includes('activity code'))) {
+                    return; 
+                }
+            } else {
+                // Fallback โดยใช้ Index (9=Email, 10=Code)
+                if (cellIndex === 9 || cellIndex === 10) return;
+            }
+
+            const td = document.createElement('td');
+            // จัดกลาง Column 0, 1, 3
+            if ([0, 1, 3].includes(cellIndex)) {
+                td.classList.add('text-center-col');
+            }
+
+            if (cellIndex === 6) { // บันทึกข้อความ
+              if (cell) {
+                const link = document.createElement('a');
+                link.href = cell;
+                link.target = '_blank';
+                link.innerHTML = '<i class="fas fa-eye me-1"></i> ดู';
+                link.className = 'btn btn-action btn-view';
+                td.appendChild(link);
+                td.classList.add('text-center-col');
+              } else {
+                td.textContent = '-';
+                td.classList.add('text-center-col');
+              }
+            } else if (cellIndex === 7 && cell) { // ลิงก์ไฟล์
+              const link = document.createElement('a');
+              link.href = cell;
+              link.target = '_blank';
+              link.innerHTML = '<i class="fas fa-file-pdf me-1"></i> ไฟล์';
+              link.className = 'btn btn-action btn-file';
+              td.appendChild(link);
+              td.classList.add('text-center-col');
+            } else {
+              td.textContent = cell;
+            }
+            tr.appendChild(td);
+          });
+          tableBody.appendChild(tr);
+        });
+      }
+    }
+
+    function sortTable(columnIndex) {
+      sortOrder = (sortOrder === 'asc') ? 'desc' : 'asc';
+      sortColumn = columnIndex;
+      currentData.sort((a, b) => {
+        const cellA = a[columnIndex].toString().toLowerCase();
+        const cellB = b[columnIndex].toString().toLowerCase();
+        if (cellA < cellB) return sortOrder === 'asc' ? -1 : 1;
+        if (cellA > cellB) return sortOrder === 'asc' ? 1 : -1;
+        return 0;
+      });
+      renderTableData(null); 
+    }
+
+    function changePage(direction) {
+      if (direction === -1 && currentPage > 1) { currentPage--; } 
+      else if (direction === 1 && currentPage < totalPage) { currentPage++; }
+      fetchData();
+    }
+
+    function goToPage(page) {
+      if (page >= 1 && page <= totalPage) { currentPage = page; fetchData(); }
+    }
+
+    // --- Modal Handling ---
+    function showForm() {
+      if (document.getElementById('dataForm')) document.getElementById('dataForm').reset();
+      const ac = document.getElementById('activityCode'); if (ac) ac.value = '';
+      new bootstrap.Modal(document.getElementById('formModal')).show();
+      google.script.run.withSuccessHandler(populateDropdowns).getDropdownData();
+    }
+    
+    function showReportForm() {
+      if (document.getElementById('reportForm')) document.getElementById('reportForm').reset();
+      new bootstrap.Modal(document.getElementById('reportFormModal')).show();
+    }
+
+    function showNonCompletedProjectForm() {
+      new bootstrap.Modal(document.getElementById('nonCompletedProjectFormModal')).show();
+      google.script.run.withSuccessHandler(populateDropdownsNonCompleted).getDropdownData();
+    }
+
+    function resetForm() {
+      document.getElementById('dataForm').reset();
+      document.getElementById('reportForm').reset();
+      document.getElementById('nonCompletedProjectForm').reset();
+    }
+
+    // --- Helpers Logic ---
+    function setSelectValue(id, value) {
+        const el = document.getElementById(id);
+        if (!el) return;
+        if (value && !Array.from(el.options).some(o => o.value === value)) {
+          const opt = document.createElement('option'); opt.value = value; opt.textContent = value; el.appendChild(opt);
+        }
+        el.value = value || '';
+    }
+    
+    let activityLookupTimer = null;
+    function handleActivityCodeInput(raw) {
+        const code = (raw || '').toString().trim().toUpperCase();
+        document.getElementById('activityCode').value = code;
+        if (activityLookupTimer) clearTimeout(activityLookupTimer);
+        if (!code) return;
+        activityLookupTimer = setTimeout(() => {
+          google.script.run.withSuccessHandler(function(info) {
+            if (!info) return;
+            setSelectValue('adminGroup', info.adminGroup || '');
+            updateWorkGroups(); 
+            setSelectValue('workGroup', info.workGroup || '');
+            document.getElementById('responsiblePerson').value = info.responsiblePerson || '';
+            setSelectValue('actionPlanProject', info.actionPlanProject || '');
+            document.getElementById('email').value = info.email || '';
+          }).getActivityInfo(code);
+        }, 300);
+    }
+    
+    function populateDropdowns(data) {
+       const adminGroup = document.getElementById('adminGroup');
+       workGroups = data.workGroups;
+       adminGroup.innerHTML = '<option value="" disabled selected>เลือกกลุ่มบริหาร</option>';
+       data.adminGroups.forEach(g => { const opt = document.createElement('option'); opt.value = g; opt.textContent = g; adminGroup.appendChild(opt); });
+       
+       const app = document.getElementById('actionPlanProject');
+       app.innerHTML = '<option value="" disabled selected>เลือกโครงการตามแผนปฏิบัติการ</option>';
+       data.actionPlanProjects.forEach(p => { const opt = document.createElement('option'); opt.value = p; opt.textContent = p; app.appendChild(opt); });
+    }
+    
+    function populateDropdownsNonCompleted(data) {
+       const adminGroup = document.getElementById('adminGroupNonCompleted');
+       workGroups = data.workGroups;
+       adminGroup.innerHTML = '<option value="" disabled selected>เลือกกลุ่มบริหาร</option>';
+       data.adminGroups.forEach(g => { const opt = document.createElement('option'); opt.value = g; opt.textContent = g; adminGroup.appendChild(opt); });
+       
+       const app = document.getElementById('actionPlanProjectNonCompleted');
+       app.innerHTML = '<option value="" disabled selected>เลือกโครงการตามแผนปฏิบัติการ</option>';
+       data.actionPlanProjects.forEach(p => { const opt = document.createElement('option'); opt.value = p; opt.textContent = p; app.appendChild(opt); });
+    }
+    
+    function updateWorkGroups() {
+        const ag = document.getElementById('adminGroup').value;
+        const wg = document.getElementById('workGroup');
+        wg.innerHTML = '<option value="" disabled selected>เลือกกลุ่มงาน</option>';
+        if(workGroups[ag]) { workGroups[ag].forEach(g => { const opt = document.createElement('option'); opt.value = g; opt.textContent = g; wg.appendChild(opt); }); }
+    }
+    
+    function updateWorkGroupsNonCompleted() {
+        const ag = document.getElementById('adminGroupNonCompleted').value;
+        const wg = document.getElementById('workGroupNonCompleted');
+        wg.innerHTML = '<option value="" disabled selected>เลือกกลุ่มงาน</option>';
+        if(workGroups[ag]) { workGroups[ag].forEach(g => { const opt = document.createElement('option'); opt.value = g; opt.textContent = g; wg.appendChild(opt); }); }
+    }
+    
+    function fetchDocumentData() {
+        const docNum = document.getElementById('documentNumber').value;
+        if(!docNum) return;
+        google.script.run.withSuccessHandler(function(data){
+            if(data) {
+                document.getElementById('reportNameReportForm').value = data.reportName;
+                document.getElementById('adminGroupReportForm').value = data.adminGroup;
+                document.getElementById('workGroupReportForm').value = data.workGroup;
+                document.getElementById('responsiblePersonReportForm').value = data.responsiblePerson;
+                document.getElementById('actionPlanProjectReportForm').value = data.actionPlanProject;
+                document.getElementById('emailReportForm').value = data.email;
+                document.getElementById('activityCodeReportForm').value = data.activityCode || '';
+            } else {
+                Swal.fire({icon:'error', title:'ไม่พบข้อมูล', showConfirmButton:true});
+            }
+        }).getDocumentData(docNum);
+    }
+    
+    function validateEmail(email) {
+      const emailPattern = /^[a-zA-Z0-9._%+-]+@g\.klaeng\.ac\.th$/;
+      return emailPattern.test(email);
+    }
+
+    function updateMarquee() {
+      google.script.run.withSuccessHandler(function(counts) {
+        document.getElementById('reportCounts').innerHTML = `จำนวนเอกสารทั้งหมด ${counts.totalDocuments} รายการ : กลุ่มบริหารวิชาการ ${counts.academicGroupCount} รายการ : กลุ่มบริหารทั่วไป ${counts.generalGroupCount} รายการ : กลุ่มบริหารงานบุคคล ${counts.personnelGroupCount} รายการ : กลุ่มบริหารงบประมาณ ${counts.budgetGroupCount} รายการ`;
+      }).getReportCounts();
+    }
+
+// =========================================================================
+    // [EDITED] ฟังก์ชันบันทึกข้อมูลหน้า "ขอเลขทะเบียนเอกสาร"
+    // =========================================================================
+    function validateAndSaveData() {
+      const reportName = document.getElementById('reportName').value;
+      const adminGroup = document.getElementById('adminGroup').value;
+      const workGroup = document.getElementById('workGroup').value;
+      const responsiblePerson = document.getElementById('responsiblePerson').value;
+      const actionPlanProject = document.getElementById('actionPlanProject').value;
+      const email = document.getElementById('email').value;
+      const activityCode = (document.getElementById('activityCode').value || '').trim().toUpperCase();
+      
+      // [NEW] ดึงชื่อคนที่ล็อกอินเข้ามาใช้งานจริงๆ
+      const loggedUser = document.getElementById('displayUserName').textContent;
+
+      if (!reportName || !adminGroup || !workGroup || !responsiblePerson || !actionPlanProject || !email) {
+        Swal.fire({icon: 'warning', title: 'กรุณากรอกข้อมูลให้ครบทุกช่อง', showConfirmButton: true});
+        return;
+      }
+      if (!validateEmail(email)) {
+        Swal.fire({icon: 'error', title: 'รูปแบบอีเมลไม่ถูกต้อง', text: 'ต้องเป็น @g.klaeng.ac.th', showConfirmButton: true});
+        return;
+      }
+
+      showLoading("กำลังบันทึกข้อมูล...");
+      google.script.run.withSuccessHandler((documentNumber) => {
+          hideLoading();
+          Swal.fire({ 
+            position: 'center', 
+            icon: 'success', 
+            title: `สำเร็จ! เลขเอกสารคือ: <span style="white-space: nowrap;">${documentNumber}</span>`, 
+            showConfirmButton: true
+          }).then(() => { resetForm(); });
+          bootstrap.Modal.getInstance(document.getElementById('formModal')).hide();
+          fetchData();
+          updateMarquee();
+      // [EDITED] แนบชื่อคนล็อกอินไปให้เซิร์ฟเวอร์
+      }).saveData(reportName, adminGroup, workGroup, responsiblePerson, actionPlanProject, email, activityCode, loggedUser); 
+    }
+
+function validateAndSaveReport() {
+    const form = document.getElementById('reportForm');
+    if (!form.checkValidity()) {
+        form.reportValidity(); 
+        return; 
+    }
+
+    const formData = {
+        documentNumber: document.getElementById('documentNumber').value,
+        quantitativeTarget: document.getElementById('quantitativeTarget').value,
+        quantitativeResult: document.getElementById('quantitativeResult').value,
+        qualitativeTarget: document.getElementById('qualitativeTarget').value,
+        qualitativeResult: document.getElementById('qualitativeResult').value,
+        expectedTarget: document.getElementById('expectedTarget').value,
+        expectedResult: parseFloat(document.getElementById('expectedResult').value),
+        actionPlanProject: document.getElementById('actionPlanProjectReportForm').value,
+        allocatedBudget: document.getElementById('allocatedBudget').value,
+        actualBudget: document.getElementById('actualBudget').value
+    };
+    
+    const fileInput = document.getElementById('fileUploadReport');
+    const file = fileInput.files[0];
+
+    if (isNaN(formData.expectedResult)) {
+        Swal.fire({
+            icon: 'warning',
+            title: 'กรุณากรอกค่า X̄ ให้ถูกต้อง',
+            text: 'ค่า X̄ ต้องเป็นตัวเลขเท่านั้น',
+            showConfirmButton: true
+        });
+        return;
+    }
+
+    showLoading("กำลังเตรียมการอัปโหลด...");
+    const fileMetadata = {
+        documentNumber: formData.documentNumber,
+        mimeType: file.type || 'application/pdf'
+    };
+
+    google.script.run.withSuccessHandler(function(uploadUrl) {
+        uploadFileInChunks(file, uploadUrl, formData, 'saveReport');
+    }).withFailureHandler(onUploadFailed).getUploadUrl(fileMetadata);
+}
+
+    function fetchDocumentDataForNonCompleted() {
+        // ดึงค่าที่พิมพ์และตัดช่องว่างหัวท้าย
+        const docNum = document.getElementById('documentNumberNonCompleted').value.trim();
+        if(!docNum) return;
+        
+        showLoading("กำลังค้นหาข้อมูล...");
+        
+        // เรียกใช้ฟังก์ชันที่มีอยู่แล้วใน Code.gs
+        google.script.run.withSuccessHandler(function(data){
+            hideLoading();
+            if(data) {
+                // นำข้อมูลที่เจอมาใส่ในช่องต่างๆ
+                document.getElementById('projectName').value = data.reportName || '';
+                setSelectValue('adminGroupNonCompleted', data.adminGroup || '');
+                updateWorkGroupsNonCompleted(); // อัปเดต Dropdown กลุ่มงาน
+                setSelectValue('workGroupNonCompleted', data.workGroup || '');
+                document.getElementById('responsiblePersonNonCompleted').value = data.responsiblePerson || '';
+                setSelectValue('actionPlanProjectNonCompleted', data.actionPlanProject || '');
+                
+                // [EDITED] เปลี่ยน position เป็น 'center' เพื่อให้อยู่กลางหน้าจอ
+                Swal.fire({
+                    position: 'center',
+                    icon: 'success',
+                    title: 'ดึงข้อมูลสำเร็จ',
+                    showConfirmButton: false,
+                    timer: 1500
+                });
+            } else {
+                Swal.fire({icon:'error', title:'ไม่พบหมายเลขเอกสารนี้ในระบบ', showConfirmButton:true});
+                // ถ้าหาไม่เจอ ให้เคลียร์ช่องให้ว่าง
+                document.getElementById('projectName').value = '';
+                document.getElementById('adminGroupNonCompleted').value = '';
+                document.getElementById('workGroupNonCompleted').value = '';
+                document.getElementById('responsiblePersonNonCompleted').value = '';
+                document.getElementById('actionPlanProjectNonCompleted').value = '';
+            }
+        }).withFailureHandler(function(err){
+            hideLoading();
+            Swal.fire({icon: 'error', title: 'เกิดข้อผิดพลาด', text: err.message});
+        }).getDocumentData(docNum);
+    }
+
+    function validateAndSaveNonCompletedProject() {
+      // ดึงค่าหมายเลขเอกสาร โดยตัดช่องว่างหัวท้ายออก
+      const documentNumberValue = document.getElementById('documentNumberNonCompleted').value.trim();
+
+      const formData = {
+        projectName: document.getElementById('projectName').value,
+        adminGroup: document.getElementById('adminGroupNonCompleted').value,
+        workGroup: document.getElementById('workGroupNonCompleted').value,
+        responsiblePerson: document.getElementById('responsiblePersonNonCompleted').value,
+        reason: document.getElementById('reasonNonCompleted').value,
+        actionPlanProject: document.getElementById('actionPlanProjectNonCompleted').value,
+        documentNumber: documentNumberValue // [EDITED] ส่งค่าจริงไปเลย ไม่ใส่ 'N/A' เผื่อไว้แล้ว
+       };
+      const file = document.getElementById('fileUploadNonCompleted').files[0];
+
+      // [EDITED] เพิ่ม !formData.documentNumber เข้าไปในเงื่อนไขการตรวจสอบ
+      if (!formData.documentNumber || !formData.projectName || !formData.adminGroup || !formData.workGroup || !formData.responsiblePerson || !formData.reason || !file || !formData.actionPlanProject) {
+        Swal.fire({ 
+            icon: 'warning', 
+            title: 'กรุณากรอกข้อมูลให้ครบทุกช่อง', 
+            text: 'หมายเลขเอกสารเป็นข้อมูลที่จำเป็นต้องระบุเสมอ', // เพิ่มข้อความแจ้งเตือนให้ชัดเจนขึ้น
+            showConfirmButton: true 
+        }); 
+        return;
+      }
+
+      showLoading("กำลังเตรียมการอัปโหลด...");
+      const fileMetadata = { projectName: formData.projectName, adminGroup: formData.adminGroup, mimeType: file.type || 'application/pdf' };
+      
+      google.script.run.withSuccessHandler(function(uploadUrl) {
+          uploadFileInChunks(file, uploadUrl, formData, 'saveNonCompletedProject');
+      }).withFailureHandler(onUploadFailed).getUploadUrl(fileMetadata);
+    }
+
+    function uploadFileInChunks(file, uploadUrl, formData, finalFunction, startByte = 0) {
+      const totalSize = file.size;
+      const endByte = Math.min(startByte + CHUNK_SIZE - 1, totalSize - 1);
+      const chunk = file.slice(startByte, endByte + 1);
+      const reader = new FileReader();
+      reader.onload = function() {
+        const chunkBase64 = reader.result.split(',')[1];
+        const percent = Math.round(((endByte + 1) / totalSize) * 100);
+        showLoading(`กำลังอัปโหลดไฟล์... ${percent}%`);
+        
+        google.script.run.withSuccessHandler(function(response) {
+            if (response.statusCode === 308) {
+              uploadFileInChunks(file, uploadUrl, formData, finalFunction, endByte + 1);
+            } else if (response.statusCode === 200 || response.statusCode === 201) {
+              const fileInfo = JSON.parse(response.content);
+              saveFormDataToSheet(fileInfo.id, formData, finalFunction);
+            } else {
+              throw new Error("Upload failed: " + response.content);
+            }
+          }).withFailureHandler(onUploadFailed).uploadChunk(uploadUrl, chunkBase64, startByte, endByte, totalSize);
+      };
+      reader.onerror = function(err) { onUploadFailed(new Error("File reading error: " + err.message)); };
+      reader.readAsDataURL(chunk);
+    }
+
+// =========================================================================
+    // [EDITED] ฟังก์ชันบันทึกข้อมูลหลังอัปโหลดไฟล์ (ส่งรายงาน & กิจกรรมที่ไม่ได้ดำเนินการ)
+    // =========================================================================
+    function saveFormDataToSheet(fileId, formData, finalFunction) {
+      showLoading("กำลังบันทึกข้อมูลลงชีต...");
+      
+      // [NEW] ดึงชื่อคนที่ล็อกอินเข้ามาใช้งานจริงๆ
+      const loggedUser = document.getElementById('displayUserName').textContent;
+
+      if (finalFunction === 'saveReport') {
+        google.script.run.withSuccessHandler(() => {
+            hideLoading();
+            Swal.fire({ icon: 'success', title: 'รายงานถูกส่งแล้ว', showConfirmButton: true }).then(() => { resetForm(); });
+            bootstrap.Modal.getInstance(document.getElementById('reportFormModal')).hide();
+            fetchData();
+            updateMarquee();
+        }).withFailureHandler(onUploadFailed).saveReport(
+            formData.documentNumber, fileId, formData.quantitativeTarget, formData.quantitativeResult,
+            formData.qualitativeTarget, formData.qualitativeResult, formData.expectedTarget,
+            // [EDITED] แนบชื่อคนล็อกอินไปให้เซิร์ฟเวอร์
+            formData.expectedResult, formData.actionPlanProject, formData.allocatedBudget, formData.actualBudget, loggedUser 
+          );
+      } else if (finalFunction === 'saveNonCompletedProject') {
+        google.script.run.withSuccessHandler(() => {
+            hideLoading();
+            Swal.fire({ icon: 'success', title: 'บันทึกข้อความถูกส่งแล้ว', showConfirmButton: true }).then(() => { resetForm(); });
+            bootstrap.Modal.getInstance(document.getElementById('nonCompletedProjectFormModal')).hide();
+            fetchData();
+            updateMarquee();
+          }).withFailureHandler(onUploadFailed).saveNonCompletedProject(
+            formData.projectName, formData.adminGroup, formData.workGroup,
+            // [EDITED] แนบชื่อคนล็อกอินไปให้เซิร์ฟเวอร์
+            formData.responsiblePerson, formData.reason, fileId, formData.actionPlanProject, formData.documentNumber, loggedUser 
+          );
+      }
+    }
+
+    function showLoading(message) {
+      Swal.fire({ title: message || 'กำลังดำเนินการ...', allowOutsideClick: false, didOpen: () => { Swal.showLoading(); }});
+    }
+
+    function hideLoading() { Swal.close(); }
+
+    function onUploadFailed(error) {
+      hideLoading();
+      Swal.fire({ icon: 'error', title: 'เกิดข้อผิดพลาด', text: error.message || error.toString(), showConfirmButton: true });
+      console.error(error); 
+    }
+  </script>
+</body>
+</html>
