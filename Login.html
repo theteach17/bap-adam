@@ -167,7 +167,7 @@
     </form>
 
     <div class="footer-text">
-      <p>v.2.0.0 พัฒนาโดย งานแผนงานและสารสนเทศโรงเรียน</p>
+      <p>v.2.1.0 พัฒนาโดย งานแผนงานและสารสนเทศโรงเรียน</p>
     </div>
   </div>
 
@@ -213,10 +213,38 @@
             timer: null 
           }).then((result) => {
             if (result.isConfirmed) { 
-                // ดึง URL แบบ Dynamic จากเซิร์ฟเวอร์
-                google.script.run.withSuccessHandler(function(url) {
-                    window.open(`${url}?page=Index&name=${encodeURIComponent(response.name)}`, '_top');
-                }).getWebAppUrl();
+                // ดึง URL แบบ Dynamic จากเซิร์ฟเวอร์ แล้วเปลี่ยนหน้าแบบ location.href
+                // ใช้แนวทางนี้เพื่อให้ทำงานเสถียรบนมือถือ/iOS/Safari และ browser ภายในแอป
+                google.script.run
+                  .withSuccessHandler(function(url) {
+                    const targetUrl = `${url}?page=Index&name=${encodeURIComponent(response.name)}`;
+
+                    Swal.fire({
+                      title: 'กำลังเข้าสู่หน้าหลัก...',
+                      allowOutsideClick: false,
+                      allowEscapeKey: false,
+                      didOpen: () => {
+                        Swal.showLoading();
+                      }
+                    });
+
+                    setTimeout(function() {
+                      try {
+                        window.top.location.href = targetUrl;
+                      } catch (e) {
+                        window.location.href = targetUrl;
+                      }
+                    }, 250);
+                  })
+                  .withFailureHandler(function(error) {
+                    Swal.fire({
+                      icon: 'error',
+                      title: 'ไม่สามารถเข้าสู่หน้าหลักได้',
+                      text: error && error.message ? error.message : 'กรุณาลองใหม่อีกครั้ง',
+                      confirmButtonColor: '#d63031'
+                    });
+                  })
+                  .getWebAppUrl();
             }
           });
         } else {
