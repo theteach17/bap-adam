@@ -21,6 +21,7 @@ var reportNameAllowedPrefixes = [
   'บันทึกข้อความชี้แจงไม่ดำเนินกิจกรรม',
   'เอกสาร'
 ];
+var documentNumberAllowedPattern = /^(บง|บว|บท|บค)\s*\d+\s*\/\s*\d{4}$/;
 var scriptProp = PropertiesService.getScriptProperties();
 
 function initialSetup() {
@@ -52,16 +53,126 @@ function getSpreadsheet_() {
   return SpreadsheetApp.openById(key);
 }
 
-function isValidReportNamePrefix_(reportName) {
+var reportNameMinDetailLength = 8;
+var reportNameDecorativeCharsRegex = /[\s.。…\-–—_:：\/\\|,，;；"'“”‘’()\[\]{}<>]+/g;
+
+function validateReportNameDetail_(reportName) {
   var value = String(reportName || '').trim();
-  return reportNameAllowedPrefixes.some(function(prefix) {
-    return value.indexOf(prefix) === 0;
-  });
+
+  if (!value) {
+    return {
+      valid: false,
+      reason: 'EMPTY',
+      message: 'กรุณาระบุชื่อเอกสาร'
+    };
+  }
+
+  var matchedPrefix = '';
+  for (var i = 0; i < reportNameAllowedPrefixes.length; i++) {
+    var prefix = reportNameAllowedPrefixes[i];
+    if (value.indexOf(prefix) === 0) {
+      matchedPrefix = prefix;
+      break;
+    }
+  }
+
+  if (!matchedPrefix) {
+    return {
+      valid: false,
+      reason: 'INVALID_PREFIX',
+      message: 'ชื่อเอกสารต้องเริ่มต้นด้วยวลีที่ระบบกำหนดแบบตรงตัวเท่านั้น'
+    };
+  }
+
+  var suffixRaw = value.substring(matchedPrefix.length);
+  var meaningfulDetail = suffixRaw.replace(reportNameDecorativeCharsRegex, '').trim();
+
+  if (meaningfulDetail.length < reportNameMinDetailLength) {
+    return {
+      valid: false,
+      reason: 'MISSING_DETAIL',
+      prefix: matchedPrefix,
+      message: 'ชื่อเอกสารยังไม่สมบูรณ์ กรุณาระบุรายละเอียดต่อท้ายวลีขึ้นต้น เพื่อให้ทราบว่าเป็นรายงาน/บันทึก/เอกสารเรื่องใด'
+    };
+  }
+
+  return {
+    valid: true,
+    reason: 'OK',
+    prefix: matchedPrefix,
+    detail: String(suffixRaw || '').trim()
+  };
 }
 
-function getReportNamePrefixErrorMessage_() {
-  return 'ชื่อเอกสารไม่ถูกต้อง กรุณาระบุชื่อเอกสารให้ขึ้นต้นด้วย "รายงานผลการดำเนินกิจกรรม" หรือ "บันทึกข้อความชี้แจงไม่ดำเนินกิจกรรม" หรือ "เอกสาร" เท่านั้น';
+function isValidReportNamePrefix_(reportName) {
+  return validateReportNameDetail_(reportName).valid;
 }
+
+function getReportNamePrefixErrorMessage_(validationResult) {
+  var result = validationResult || { reason: 'INVALID_PREFIX' };
+
+  if (result.reason === 'MISSING_DETAIL') {
+    return 'ชื่อเอกสารยังไม่สมบูรณ์ กรุณาระบุรายละเอียดต่อท้ายวลีขึ้นต้น เช่น "รายงานผลการดำเนินกิจกรรมโครงการ..." หรือ "บันทึกข้อความชี้แจงไม่ดำเนินกิจกรรมตามแผนปฏิบัติการ..." หรือ "เอกสารแบบรายงานผล..."';
+  }
+
+  return 'ชื่อเอกสารไม่ถูกต้อง กรุณาระบุชื่อเอกสารให้เริ่มต้นด้วยวลีที่กำหนดแบบตรงตัวเท่านั้น คือ "รายงานผลการดำเนินกิจกรรม" หรือ "บันทึกข้อความชี้แจงไม่ดำเนินกิจกรรม" หรือ "เอกสาร" และต้องมีรายละเอียดต่อท้าย';
+}
+
+function normalizeDocumentNumber_(value) {
+  var raw = String(value || '').trim().replace(/\s+/g, ' ');
+  var match = raw.match(/^(บง|บว|บท|บค)\s*(\d+)\s*\/\s*(\d{4})$/);
+  return match ? match[1] + ' ' + match[2] + '/' + match[3] : raw;
+}
+
+function isValidDocumentNumberFormat_(value) {
+  return documentNumberAllowedPattern.test(String(value || '').trim());
+}
+
+function getDocumentNumberFormatErrorMessage_() {
+  return 'รูปแบบหมายเลขเอกสารไม่ถูกต้อง ต้องเป็น บง 123/2568, บว 123/2568, บท 123/2568 หรือ บค 123/2568 เท่านั้น';
+}
+
+function findReportNoRecordByDocumentNumber_(documentNumber) {
+  var docNo = normalizeDocumentNumber_(documentNumber);
+  if (!docNo) return null;
+
+  var spreadsheet = getSpreadsheet_();
+  var sheet = spreadsheet.getSheetByName(sheetName);
+  if (!sheet) return null;
+
+  var data = sheet.getDataRange().getValues();
+  for (var i = 1; i < data.length; i++) {
+    var rowDocNo = normalizeDocumentNumber_(data[i][1]);
+    if (rowDocNo === docNo) {
+      var row = data[i];
+      var activityCode = String(row[10] || '').trim().toUpperCase();
+      var activityName = String(row[11] || '').trim();
+      if (!activityName && activityCode) {
+        activityName = getActivityNameFallback_(activityCode);
+      }
+      var reportName = row[2];
+      var validationInfo = resolveReportValidationType_(reportName, docNo, '');
+      return {
+        rowNumber: i + 1,
+        documentNumber: docNo,
+        reportName: reportName,
+        adminGroup: row[3],
+        workGroup: row[4],
+        responsiblePerson: row[5],
+        actionPlanProject: row[8],
+        email: row[9],
+        activityCode: activityCode,
+        activityName: activityName,
+        reportValidationType: validationInfo.type,
+        reportValidationTypeLabel: validationInfo.label,
+        reportValidationMode: validationInfo.mode,
+        requiresStatistics: validationInfo.requiresStatistics
+      };
+    }
+  }
+  return null;
+}
+
 
 function ensureReportNoActivityNameColumn_(sheet) {
   if (!sheet) throw new Error("System Error: ไม่พบแผ่นงานชื่อ '" + sheetName + "'");
@@ -543,44 +654,24 @@ function getData(search, limit, page) {
 
 function getDocumentData(documentNumber) {
   requireAuth_('getDocumentData');
-  var docNo = String(documentNumber || '').trim();
-  var spreadsheet = getSpreadsheet_();
-  var sheet = spreadsheet.getSheetByName(sheetName);
-  if (!sheet) return null;
-  var data = sheet.getDataRange().getValues();
-  data.shift();
-  for (var i = 0; i < data.length; i++) {
-    if (String(data[i][1] || '').trim() === docNo) {
-      var activityCode = String(data[i][10] || '').trim().toUpperCase();
-      var activityName = String(data[i][11] || '').trim();
-      if (!activityName && activityCode) {
-        activityName = getActivityNameFallback_(activityCode);
-      }
-      var reportName = data[i][2];
-      var validationInfo = resolveReportValidationType_(reportName, docNo, '');
-      return {
-        reportName: reportName, // C
-        adminGroup: data[i][3], // D
-        workGroup: data[i][4], // E
-        responsiblePerson: data[i][5], // F
-        actionPlanProject: data[i][8], // I
-        email: data[i][9], // J
-        activityCode: activityCode, // K
-        activityName: activityName, // L หรือ fallback จาก LinkBAP
-        reportValidationType: validationInfo.type,
-        reportValidationTypeLabel: validationInfo.label,
-        reportValidationMode: validationInfo.mode,
-        requiresStatistics: validationInfo.requiresStatistics
-      };
-    }
-  }
-  return null;
+  var record = findReportNoRecordByDocumentNumber_(documentNumber);
+  if (!record) return null;
+  return {
+    documentNumber: record.documentNumber,
+    reportName: record.reportName, // C
+    adminGroup: record.adminGroup, // D
+    workGroup: record.workGroup, // E
+    responsiblePerson: record.responsiblePerson, // F
+    actionPlanProject: record.actionPlanProject, // I
+    email: record.email, // J
+    activityCode: record.activityCode, // K
+    activityName: record.activityName, // L หรือ fallback จาก LinkBAP
+    reportValidationType: record.reportValidationType,
+    reportValidationTypeLabel: record.reportValidationTypeLabel,
+    reportValidationMode: record.reportValidationMode,
+    requiresStatistics: record.requiresStatistics
+  };
 }
-
-
-// =========================================================================
-// [EDITED] 1. ฟังก์ชันขอเลขทะเบียนเอกสาร
-// =========================================================================
 
 function saveData(reportName, adminGroup, workGroup, responsiblePerson, actionPlanProject, email, activityCode, activityName, loggedUser) {
   var session = requireAuth_('saveData');
@@ -605,8 +696,9 @@ function saveData(reportName, adminGroup, workGroup, responsiblePerson, actionPl
     throw new Error('กรุณากรอกข้อมูลให้ครบทุกช่อง');
   }
 
-  if (!isValidReportNamePrefix_(reportName)) {
-    throw new Error(getReportNamePrefixErrorMessage_());
+  var reportNameValidation = validateReportNameDetail_(reportName);
+  if (!reportNameValidation.valid) {
+    throw new Error(getReportNamePrefixErrorMessage_(reportNameValidation));
   }
 
   if (activityCode) {
@@ -801,6 +893,29 @@ function saveNonCompletedProject(projectName, adminGroup, workGroup, responsible
   var session = requireAuth_('saveNonCompletedProject');
   var auditUser = session.displayName || session.username || responsiblePerson || loggedUser;
 
+  documentNumber = normalizeDocumentNumber_(documentNumber);
+  projectName = String(projectName || '').trim();
+  reason = String(reason || '').trim();
+  fileId = String(fileId || '').trim();
+
+  if (!documentNumber) {
+    throw new Error('กรุณาระบุหมายเลขเอกสาร');
+  }
+  if (!isValidDocumentNumberFormat_(documentNumber)) {
+    throw new Error(getDocumentNumberFormatErrorMessage_());
+  }
+  if (!reason) {
+    throw new Error('กรุณาระบุเหตุผลที่ไม่ดำเนินการโครงการ/กิจกรรม');
+  }
+  if (!fileId) {
+    throw new Error('ไม่พบรหัสไฟล์ที่อัปโหลด กรุณาอัปโหลดไฟล์ PDF ใหม่อีกครั้ง');
+  }
+
+  var documentRecord = findReportNoRecordByDocumentNumber_(documentNumber);
+  if (!documentRecord) {
+    throw new Error('ไม่พบหมายเลขเอกสารนี้ในชีต ReportNo จึงไม่สามารถบันทึกลง ReportSubmit ได้');
+  }
+
   var fileUrl;
   try {
     fileUrl = DriveApp.getFileById(fileId).getUrl();
@@ -809,113 +924,234 @@ function saveNonCompletedProject(projectName, adminGroup, workGroup, responsible
     throw new Error('ไม่พบไฟล์ที่อัปโหลด (ID: ' + fileId + ')');
   }
 
-  var activityCode = '';
-  if (documentNumber && documentNumber !== 'N/A') {
-    var documentData = getDocumentData(documentNumber);
-    if (documentData) {
-      activityCode = documentData.activityCode || '';
-    }
+  // ใช้ข้อมูลจาก ReportNo เป็นแหล่งอ้างอิงหลัก เพื่อลดความเสี่ยงจากการแก้ข้อมูลในหน้าเว็บหลังค้นหาเลขเอกสาร
+  projectName = projectName || documentRecord.reportName;
+  adminGroup = documentRecord.adminGroup || String(adminGroup || '').trim();
+  workGroup = documentRecord.workGroup || String(workGroup || '').trim();
+  responsiblePerson = documentRecord.responsiblePerson || String(responsiblePerson || '').trim();
+  actionPlanProject = documentRecord.actionPlanProject || String(actionPlanProject || '').trim();
+  var activityCode = String(documentRecord.activityCode || '').trim().toUpperCase();
+
+  if (!projectName || !adminGroup || !workGroup || !responsiblePerson || !actionPlanProject) {
+    throw new Error('ข้อมูลเอกสารใน ReportNo ไม่ครบถ้วน กรุณาตรวจสอบรายการเลขเอกสารนี้ก่อนส่งบันทึกข้อความ');
   }
 
   var spreadsheet = getSpreadsheet_();
   var reportSubmitSheet = spreadsheet.getSheetByName(reportSubmitSheetName);
   if (!reportSubmitSheet) throw new Error("System Error: ไม่พบแผ่นงานชื่อ '" + reportSubmitSheetName + "'");
 
-  var rowData = new Array(19).fill('');
-  rowData[1] = documentNumber || 'N/A'; // B
-  rowData[2] = projectName; // C
-  rowData[3] = adminGroup; // D
-  rowData[4] = workGroup; // E
-  rowData[5] = responsiblePerson; // F
-  rowData[6] = fileUrl; // G
-  rowData[13] = reason; // N
-  rowData[14] = actionPlanProject; // O
-  rowData[18] = activityCode.toString().trim().toUpperCase(); // S
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) {
+    throw new Error('ระบบกำลังประมวลผลคำขออื่น ไม่สามารถบันทึกข้อมูลได้ โปรดลองอีกครั้ง');
+  }
 
-  reportSubmitSheet.appendRow(rowData);
+  try {
+    // ตรวจซ้ำภายใต้ lock เพื่อให้มั่นใจว่าเลขเอกสารยังมีอยู่ก่อน append ข้อมูลจริง
+    var lockedRecord = findReportNoRecordByDocumentNumber_(documentNumber);
+    if (!lockedRecord) {
+      throw new Error('ไม่พบหมายเลขเอกสารนี้ในชีต ReportNo ระหว่างบันทึกข้อมูล');
+    }
 
-  if (documentNumber && documentNumber !== 'N/A') {
-    const lock = LockService.getScriptLock();
-    if (!lock.tryLock(30000)) {
-      throw new Error('ระบบกำลังประมวลผลคำขออื่น ไม่สามารถอัปเดตลิงก์ในฐานข้อมูลหลักได้ โปรดลองอีกครั้ง');
-    }
-    try {
-      var reportNoSheet = spreadsheet.getSheetByName(sheetName);
-      if (!reportNoSheet) throw new Error("System Error: ไม่พบแผ่นงานชื่อ '" + sheetName + "'");
-      var data = reportNoSheet.getDataRange().getValues();
-      var updated = false;
-      for (var i = 0; i < data.length; i++) {
-        if (data[i][1] === documentNumber) {
-          reportNoSheet.getRange(i + 1, 7).setValue(fileUrl); // G
-          updated = true;
-          break;
-        }
-      }
-      if (!updated) throw new Error('ไม่พบหมายเลขเอกสารในชีตหลักหลังจากบันทึกกิจกรรมที่ไม่ได้ดำเนินการ');
-    } catch (e) {
-      Logger.log('Error in locked saveNonCompletedProject (ReportNo Update): ' + e.message);
-      throw e;
-    } finally {
-      lock.releaseLock();
-    }
+    var rowData = new Array(19).fill('');
+    rowData[1] = lockedRecord.documentNumber; // B
+    rowData[2] = projectName; // C
+    rowData[3] = adminGroup; // D
+    rowData[4] = workGroup; // E
+    rowData[5] = responsiblePerson; // F
+    rowData[6] = fileUrl; // G
+    rowData[13] = reason; // N
+    rowData[14] = actionPlanProject; // O
+    rowData[18] = activityCode; // S
+
+    reportSubmitSheet.appendRow(rowData);
+
+    var reportNoSheet = spreadsheet.getSheetByName(sheetName);
+    if (!reportNoSheet) throw new Error("System Error: ไม่พบแผ่นงานชื่อ '" + sheetName + "'");
+    reportNoSheet.getRange(lockedRecord.rowNumber, 7).setValue(fileUrl); // G
+
+  } catch (e) {
+    Logger.log('Error in locked saveNonCompletedProject: ' + e.message);
+    throw e;
+  } finally {
+    lock.releaseLock();
   }
 
   logAction(auditUser, 'ส่งบันทึกข้อความโครงการ/กิจกรรม ที่ไม่ได้ดำเนินการ', 'สำเร็จ', projectName);
 }
 
+function auditInvalidReportSubmitDocumentNumbers() {
+  requireAuth_('auditInvalidReportSubmitDocumentNumbers');
 
+  var ss = getSpreadsheet_();
+  var reportSubmitSheet = ss.getSheetByName(reportSubmitSheetName);
+  var reportNoSheet = ss.getSheetByName(sheetName);
+  if (!reportSubmitSheet) throw new Error("System Error: ไม่พบแผ่นงานชื่อ '" + reportSubmitSheetName + "'");
+  if (!reportNoSheet) throw new Error("System Error: ไม่พบแผ่นงานชื่อ '" + sheetName + "'");
+
+  var reportNoData = reportNoSheet.getDataRange().getValues();
+  var validDocNumbers = {};
+  for (var i = 1; i < reportNoData.length; i++) {
+    var docNo = normalizeDocumentNumber_(reportNoData[i][1]);
+    if (docNo) validDocNumbers[docNo] = true;
+  }
+
+  var submitData = reportSubmitSheet.getDataRange().getValues();
+  var auditRows = [[
+    'ReportSubmit Row',
+    'หมายเลขเอกสาร',
+    'สถานะ',
+    'ชื่อรายการ',
+    'กลุ่มบริหาร',
+    'ผู้รับผิดชอบ',
+    'ลิงก์ไฟล์'
+  ]];
+
+  for (var r = 1; r < submitData.length; r++) {
+    var rawDocNo = String(submitData[r][1] || '').trim();
+    if (!rawDocNo) continue;
+    var normalizedDocNo = normalizeDocumentNumber_(rawDocNo);
+    var status = '';
+    if (!isValidDocumentNumberFormat_(rawDocNo)) {
+      status = 'รูปแบบหมายเลขเอกสารไม่ถูกต้อง';
+    } else if (!validDocNumbers[normalizedDocNo]) {
+      status = 'ไม่พบหมายเลขเอกสารใน ReportNo';
+    }
+    if (status) {
+      auditRows.push([
+        r + 1,
+        rawDocNo,
+        status,
+        submitData[r][2] || '',
+        submitData[r][3] || '',
+        submitData[r][5] || '',
+        submitData[r][6] || ''
+      ]);
+    }
+  }
+
+  var auditSheetName = 'InvalidReportSubmitAudit';
+  var auditSheet = ss.getSheetByName(auditSheetName) || ss.insertSheet(auditSheetName);
+  auditSheet.clearContents();
+  auditSheet.getRange(1, 1, auditRows.length, auditRows[0].length).setValues(auditRows);
+  auditSheet.autoResizeColumns(1, auditRows[0].length);
+
+  return {
+    sheetName: auditSheetName,
+    invalidCount: auditRows.length - 1
+  };
+}
+
+
+
+// =========================================================================
+// [HOTFIX] Helper สำหรับค้นหาหัวคอลัมน์แบบยืดหยุ่นในชีต LinkBAP
+// สาเหตุ: getActivityInfo() ต้องใช้ _findIndex_() เพื่อ map หัวคอลัมน์
+// หากไม่มี helper นี้ เมนูขอเลขทะเบียนเอกสารจะค้นหารหัสกิจกรรมไม่ได้
+// =========================================================================
+
+/**
+ * Reads dropdown master data from the Dropdown sheet for document request forms.
+ * Column mapping is intentionally kept identical to the original production system:
+ * A = admin groups, B-E = work groups by admin group, F = action plan projects.
+ */
 function getDropdownData() {
   requireAuth_('getDropdownData');
 
-  var spreadsheet = SpreadsheetApp.openById(scriptProp.getProperty('key'));
+  var spreadsheet = getSpreadsheet_();
   var sheet = spreadsheet.getSheetByName('Dropdown');
+  if (!sheet) {
+    throw new Error('ไม่พบชีต Dropdown กรุณาตรวจสอบฐานข้อมูลระบบ');
+  }
+
   var data = sheet.getDataRange().getValues();
-  var adminGroups = data.map(row => row[0]).filter(value => value);
+  var adminGroups = data.map(function(row) { return row[0]; }).filter(function(value) { return value; });
   var workGroups = {
-    'กลุ่มบริหารวิชาการ': data.map(row => row[1]).filter(value => value),
-    'กลุ่มบริหารงบประมาณ': data.map(row => row[2]).filter(value => value),
-    'กลุ่มบริหารงานบุคคล': data.map(row => row[3]).filter(value => value),
-    'กลุ่มบริหารทั่วไป': data.map(row => row[4]).filter(value => value)
+    'กลุ่มบริหารวิชาการ': data.map(function(row) { return row[1]; }).filter(function(value) { return value; }),
+    'กลุ่มบริหารงบประมาณ': data.map(function(row) { return row[2]; }).filter(function(value) { return value; }),
+    'กลุ่มบริหารงานบุคคล': data.map(function(row) { return row[3]; }).filter(function(value) { return value; }),
+    'กลุ่มบริหารทั่วไป': data.map(function(row) { return row[4]; }).filter(function(value) { return value; })
   };
-  var actionPlanProjects = data.map(row => row[5]).filter(value => value);
-  return { adminGroups: adminGroups, workGroups: workGroups, actionPlanProjects: actionPlanProjects };
+  var actionPlanProjects = data.map(function(row) { return row[5]; }).filter(function(value) { return value; });
+
+  return {
+    adminGroups: adminGroups,
+    workGroups: workGroups,
+    actionPlanProjects: actionPlanProjects
+  };
 }
 
+/**
+ * Counts registered documents by administration group for the dashboard marquee.
+ */
 function getReportCounts() {
   requireAuth_('getReportCounts');
 
-  var spreadsheet = SpreadsheetApp.openById(scriptProp.getProperty('key'));
+  var spreadsheet = getSpreadsheet_();
   var sheet = spreadsheet.getSheetByName(sheetName);
+  if (!sheet) {
+    throw new Error('ไม่พบชีต ' + sheetName + ' กรุณาตรวจสอบฐานข้อมูลระบบ');
+  }
+
   var data = sheet.getDataRange().getValues();
-  data.shift(); 
+  data.shift();
+
   var totalDocuments = 0;
   var academicGroupCount = 0;
   var generalGroupCount = 0;
   var personnelGroupCount = 0;
   var budgetGroupCount = 0;
-  data.forEach(row => {
-    if (row[1]) { 
+
+  data.forEach(function(row) {
+    if (row[1]) {
       totalDocuments++;
-      switch (row[3]) { 
-        case 'กลุ่มบริหารวิชาการ':   academicGroupCount++; break;
-        case 'กลุ่มบริหารทั่วไป':    generalGroupCount++; break;
-        case 'กลุ่มบริหารงานบุคคล':  personnelGroupCount++; break;
-        case 'กลุ่มบริหารงบประมาณ': budgetGroupCount++; break;
+      switch (row[3]) {
+        case 'กลุ่มบริหารวิชาการ':
+          academicGroupCount++;
+          break;
+        case 'กลุ่มบริหารทั่วไป':
+          generalGroupCount++;
+          break;
+        case 'กลุ่มบริหารงานบุคคล':
+          personnelGroupCount++;
+          break;
+        case 'กลุ่มบริหารงบประมาณ':
+          budgetGroupCount++;
+          break;
       }
     }
   });
-  return { totalDocuments, academicGroupCount, generalGroupCount, personnelGroupCount, budgetGroupCount };
+
+  return {
+    totalDocuments: totalDocuments,
+    academicGroupCount: academicGroupCount,
+    generalGroupCount: generalGroupCount,
+    personnelGroupCount: personnelGroupCount,
+    budgetGroupCount: budgetGroupCount
+  };
 }
 
-function _normalizeHeader_(h) { return h.toString().trim().toLowerCase().replace(/\s+/g, '').replace(/[()]/g, ''); }
+function _normalizeHeader_(header) {
+  return String(header || '')
+    .toLowerCase()
+    .replace(/\s+/g, '')
+    .replace(/[()（）\[\]{}<>"'“”‘’._\-–—:：\/\\|]/g, '')
+    .trim();
+}
 
 function _findIndex_(headers, candidates) {
-  const map = {};
-  headers.forEach((h, i) => map[_normalizeHeader_(h)] = i);
-  for (var c of candidates) {
-    var key = _normalizeHeader_(c);
-    if (map.hasOwnProperty(key)) return map[key];
+  headers = headers || [];
+  candidates = candidates || [];
+
+  var normalizedHeaders = headers.map(function(header) {
+    return _normalizeHeader_(header);
+  });
+
+  for (var i = 0; i < candidates.length; i++) {
+    var target = _normalizeHeader_(candidates[i]);
+    var exactIndex = normalizedHeaders.indexOf(target);
+    if (exactIndex !== -1) return exactIndex;
   }
+
   return -1;
 }
 
@@ -973,13 +1209,35 @@ function getUploadUrl(metadata) {
   requireAuth_('getUploadUrl');
 
   try {
+    metadata = metadata || {};
     var folderId;
     var fileName;
     var settings = getGlobalSettings();
 
-    if (metadata.documentNumber) {
+    if (metadata.uploadPurpose === 'NON_COMPLETED') {
+      var nonCompletedDocNo = normalizeDocumentNumber_(metadata.documentNumber);
+      if (!nonCompletedDocNo || !isValidDocumentNumberFormat_(nonCompletedDocNo)) {
+        throw new Error(getDocumentNumberFormatErrorMessage_());
+      }
+
+      var nonCompletedRecord = findReportNoRecordByDocumentNumber_(nonCompletedDocNo);
+      if (!nonCompletedRecord) {
+        throw new Error('ไม่พบหมายเลขเอกสารนี้ในชีต ReportNo จึงไม่สามารถอัปโหลดบันทึกข้อความได้');
+      }
+
+      switch (nonCompletedRecord.adminGroup) {
+        case 'กลุ่มบริหารวิชาการ':   folderId = settings['FOLDER_ACADEMIC']; break;
+        case 'กลุ่มบริหารงบประมาณ':  folderId = settings['FOLDER_BUDGET']; break;
+        case 'กลุ่มบริหารทั่วไป':    folderId = settings['FOLDER_GENERAL']; break;
+        case 'กลุ่มบริหารงานบุคคล':  folderId = settings['FOLDER_PERSONNEL']; break;
+        default: throw new Error('Invalid admin group');
+      }
+      fileName = `ไม่ได้ดำเนินการ-${nonCompletedDocNo}-${(nonCompletedRecord.reportName || '').toString().substring(0, 50)}.pdf`;
+
+    } else if (metadata.documentNumber) {
       const documentData = getDocumentData(metadata.documentNumber);
       if (!documentData) throw new Error('Invalid document number');
+      var normalizedDocumentNumber = documentData.documentNumber || String(metadata.documentNumber || '').trim();
       
       switch (documentData.adminGroup) {
         case 'กลุ่มบริหารวิชาการ':   folderId = settings['FOLDER_ACADEMIC']; break;
@@ -988,7 +1246,7 @@ function getUploadUrl(metadata) {
         case 'กลุ่มบริหารงานบุคคล':  folderId = settings['FOLDER_PERSONNEL']; break;
         default: throw new Error('Invalid admin group');
       }
-      fileName = `${metadata.documentNumber}-${(documentData.reportName || '').toString().substring(0, 50)}.pdf`;
+      fileName = `${normalizedDocumentNumber}-${(documentData.reportName || '').toString().substring(0, 50)}.pdf`;
 
     } 
     else if (metadata.projectName) {
@@ -1040,6 +1298,7 @@ function getUploadUrl(metadata) {
     throw new Error("Server error: " + e.message);
   }
 }
+
 
 function uploadChunk(uploadUrl, chunkBase64, startByte, chunkEndByte, totalSize) {
   requireAuth_('uploadChunk');

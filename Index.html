@@ -600,7 +600,7 @@
             <div class="mb-3">
               <label for="reportName" class="form-label">ชื่อเอกสาร <span class="text-danger">*</span></label>
               <input type="text" class="form-control" id="reportName" required placeholder="เช่น รายงานผลการดำเนินกิจกรรม..., บันทึกข้อความชี้แจงไม่ดำเนินกิจกรรม..., หรือ เอกสาร...">
-              <div class="form-text">ชื่อเอกสารต้องขึ้นต้นด้วย “รายงานผลการดำเนินกิจกรรม...” หรือ “บันทึกข้อความชี้แจงไม่ดำเนินกิจกรรม...” หรือ “เอกสาร...” เท่านั้น</div>
+              <div class="form-text">ชื่อเอกสารต้องเริ่มต้นด้วยวลีใดวลีหนึ่งแบบตรงตัวเท่านั้น: “รายงานผลการดำเนินกิจกรรม” หรือ “บันทึกข้อความชี้แจงไม่ดำเนินกิจกรรม” หรือ “เอกสาร” และต้องมีรายละเอียดต่อท้าย เช่น ชื่อกิจกรรม/โครงการ/เรื่องของเอกสาร</div>
             </div>
 
             <div class="mb-3">
@@ -815,7 +815,7 @@
                 <div class="card-body">
                     <label class="form-label fw-bold">ค้นหาหมายเลขเอกสาร <span class="text-danger">*</span></label>
                     <div class="input-group mt-1">
-                        <input type="text" class="form-control" id="documentNumberNonCompleted" required onchange="fetchDocumentDataForNonCompleted()" placeholder="กรอกหมายเลขเอกสาร (เช่น บว 123/2568) แล้วกด Enter">
+                        <input type="text" class="form-control" id="documentNumberNonCompleted" required oninput="handleNonCompletedDocumentNumberInput()" onchange="fetchDocumentDataForNonCompleted()" placeholder="กรอกหมายเลขเอกสาร (เช่น บว 123/2568) แล้วกด Enter">
                         <span class="input-group-text bg-white"><i class="fas fa-search text-warning"></i></span>
                     </div>
                     <div class="form-text mt-2 text-muted">ระบบจะดึงข้อมูลที่เคยขึ้นทะเบียนไว้มาแสดงให้โดยอัตโนมัติ</div>
@@ -886,6 +886,7 @@
     let sortColumn = -1;
     let workGroups = {};
     let currentReportDocumentMeta = null;
+    let currentNonCompletedDocumentMeta = null;
     const CHUNK_SIZE = 2 * 1024 * 1024; // 2MB Chunk Size
 
     // --- Window OnLoad ---
@@ -893,6 +894,7 @@
       setupUserProfile();
       fetchData();
       updateMarquee();
+      setupNonCompletedModalResetHandler();
       setInterval(updateClock, 1000);
     };
 
@@ -1102,17 +1104,16 @@
     }
 
     function showNonCompletedProjectForm() {
+      resetNonCompletedProjectFormForNextUse();
       new bootstrap.Modal(document.getElementById('nonCompletedProjectFormModal')).show();
       google.script.run.withSuccessHandler(populateDropdownsNonCompleted).getDropdownData();
     }
-
     function resetForm() {
       document.getElementById('dataForm').reset();
       document.getElementById('reportForm').reset();
       document.getElementById('nonCompletedProjectForm').reset();
+      resetNonCompletedDocumentState(false);
     }
-
-    // --- Helpers Logic ---
     function setSelectValue(id, value) {
         const el = document.getElementById(id);
         if (!el) return;
@@ -1122,6 +1123,80 @@
         el.value = value || '';
     }
     
+
+    // --- Document Number Validation for Non-Completed Project Workflow ---
+    const DOCUMENT_NUMBER_FORMAT_PATTERN = /^(บง|บว|บท|บค)\s*\d+\s*\/\s*\d{4}$/;
+
+    function normalizeDocumentNumber(value) {
+      const raw = (value || '').toString().trim().replace(/\s+/g, ' ');
+      const match = raw.match(/^(บง|บว|บท|บค)\s*(\d+)\s*\/\s*(\d{4})$/);
+      return match ? `${match[1]} ${match[2]}/${match[3]}` : raw;
+    }
+
+    function isValidDocumentNumberFormat(value) {
+      return DOCUMENT_NUMBER_FORMAT_PATTERN.test((value || '').toString().trim());
+    }
+
+    function getDocumentNumberFormatHelpText() {
+      return 'รูปแบบที่ถูกต้องคือ บง 123/2568, บว 123/2568, บท 123/2568 หรือ บค 123/2568 เท่านั้น';
+    }
+
+    function clearNonCompletedAutoFields() {
+      const projectName = document.getElementById('projectName');
+      if (projectName) projectName.value = '';
+      setSelectValue('adminGroupNonCompleted', '');
+      updateWorkGroupsNonCompleted();
+      setSelectValue('workGroupNonCompleted', '');
+      const responsible = document.getElementById('responsiblePersonNonCompleted');
+      if (responsible) responsible.value = '';
+      setSelectValue('actionPlanProjectNonCompleted', '');
+    }
+
+    function resetNonCompletedDocumentState(clearFields) {
+      currentNonCompletedDocumentMeta = null;
+      if (clearFields) clearNonCompletedAutoFields();
+    }
+
+    function resetNonCompletedProjectFormForNextUse() {
+      const form = document.getElementById('nonCompletedProjectForm');
+      if (form) form.reset();
+
+      const docInput = document.getElementById('documentNumberNonCompleted');
+      if (docInput) docInput.value = '';
+
+      const projectName = document.getElementById('projectName');
+      if (projectName) projectName.value = '';
+
+      const responsible = document.getElementById('responsiblePersonNonCompleted');
+      if (responsible) responsible.value = '';
+
+      const reason = document.getElementById('reasonNonCompleted');
+      if (reason) reason.value = '';
+
+      const fileInput = document.getElementById('fileUploadNonCompleted');
+      if (fileInput) fileInput.value = '';
+
+      setSelectValue('adminGroupNonCompleted', '');
+      updateWorkGroupsNonCompleted();
+      setSelectValue('workGroupNonCompleted', '');
+      setSelectValue('actionPlanProjectNonCompleted', '');
+
+      currentNonCompletedDocumentMeta = null;
+    }
+
+    function setupNonCompletedModalResetHandler() {
+      const modalEl = document.getElementById('nonCompletedProjectFormModal');
+      if (!modalEl || modalEl.dataset.resetHandlerAttached === 'true') return;
+      modalEl.dataset.resetHandlerAttached = 'true';
+      modalEl.addEventListener('hidden.bs.modal', function () {
+        resetNonCompletedProjectFormForNextUse();
+      });
+    }
+
+    function handleNonCompletedDocumentNumberInput() {
+      resetNonCompletedDocumentState(true);
+    }
+
     let activityLookupTimer = null;
     let activityLookupState = { code: '', found: null, pending: false };
 
@@ -1491,25 +1566,74 @@
       'บันทึกข้อความชี้แจงไม่ดำเนินกิจกรรม',
       'เอกสาร'
     ];
+    const REPORT_NAME_MIN_DETAIL_LENGTH = 8;
+    const REPORT_NAME_DECORATIVE_CHARS_REGEX = /[\s.。…\-–—_:：\/\\|,，;；"'“”‘’()\[\]{}<>]+/g;
 
-    function isValidReportNamePrefix(reportName) {
+    function validateReportNameDetail(reportName) {
       const value = (reportName || '').toString().trim();
-      return REPORT_NAME_ALLOWED_PREFIXES.some(prefix => value.startsWith(prefix));
+
+      if (!value) {
+        return {
+          valid: false,
+          reason: 'EMPTY',
+          message: 'กรุณาระบุชื่อเอกสาร'
+        };
+      }
+
+      const matchedPrefix = REPORT_NAME_ALLOWED_PREFIXES.find(prefix => value.startsWith(prefix));
+      if (!matchedPrefix) {
+        return {
+          valid: false,
+          reason: 'INVALID_PREFIX',
+          message: 'ชื่อเอกสารต้องเริ่มต้นด้วยวลีที่ระบบกำหนดแบบตรงตัวเท่านั้น'
+        };
+      }
+
+      const suffixRaw = value.slice(matchedPrefix.length);
+      const meaningfulDetail = suffixRaw.replace(REPORT_NAME_DECORATIVE_CHARS_REGEX, '').trim();
+
+      if (meaningfulDetail.length < REPORT_NAME_MIN_DETAIL_LENGTH) {
+        return {
+          valid: false,
+          reason: 'MISSING_DETAIL',
+          prefix: matchedPrefix,
+          message: 'ชื่อเอกสารยังไม่สมบูรณ์ กรุณาระบุรายละเอียดต่อท้ายวลีขึ้นต้น เพื่อให้ทราบว่าเป็นรายงาน/บันทึก/เอกสารเรื่องใด'
+        };
+      }
+
+      return {
+        valid: true,
+        reason: 'OK',
+        prefix: matchedPrefix,
+        detail: suffixRaw.trim()
+      };
     }
 
-    function showReportNamePrefixWarning() {
+    function isValidReportNamePrefix(reportName) {
+      return validateReportNameDetail(reportName).valid;
+    }
+
+    function showReportNamePrefixWarning(validationResult) {
+      const result = validationResult || { reason: 'INVALID_PREFIX', message: 'ชื่อเอกสารไม่ถูกต้อง' };
+      const isMissingDetail = result.reason === 'MISSING_DETAIL';
       Swal.fire({
         icon: 'warning',
-        title: 'ชื่อเอกสารไม่ถูกต้อง',
+        title: isMissingDetail ? 'ชื่อเอกสารยังไม่สมบูรณ์' : 'ชื่อเอกสารไม่ถูกต้อง',
         html: `
           <div class="text-start" style="font-size:0.95rem; line-height:1.7;">
-            <div>กรุณาระบุชื่อเอกสารให้ขึ้นต้นด้วยอย่างใดอย่างหนึ่งต่อไปนี้:</div>
+            <div class="mb-2">${escapeHtml(result.message)}</div>
+            <div>วลีขึ้นต้นที่อนุญาตและต้องพิมพ์ให้ตรงตัวเท่านั้น:</div>
             <ol class="mb-2 mt-2">
-              <li>รายงานผลการดำเนินกิจกรรม...</li>
-              <li>บันทึกข้อความชี้แจงไม่ดำเนินกิจกรรม...</li>
-              <li>เอกสาร...</li>
+              <li>รายงานผลการดำเนินกิจกรรม</li>
+              <li>บันทึกข้อความชี้แจงไม่ดำเนินกิจกรรม</li>
+              <li>เอกสาร</li>
             </ol>
-            <div class="small text-muted">ตัวอย่าง: รายงานผลการดำเนินกิจกรรมพัฒนาทักษะภาษาอังกฤษ</div>
+            <div class="mb-1">ตัวอย่างชื่อเอกสารที่ถูกต้อง:</div>
+            <ul class="mb-0">
+              <li>รายงานผลการดำเนินกิจกรรมโครงการพัฒนาวิชาการที่เน้นคุณภาพผู้เรียนรอบด้านตามหลักสูตรสถานศึกษา</li>
+              <li>บันทึกข้อความชี้แจงไม่ดำเนินกิจกรรมตามแผนปฏิบัติการ ประจำปีการศึกษา 2568</li>
+              <li>เอกสารแบบรายงานผลการดำเนินงาน โครงการที่ 20 โครงการส่งเสริมการตรวจสอบและประเมินผู้เรียนอย่างเป็นระบบ</li>
+            </ul>
           </div>
         `,
         confirmButtonColor: '#d63031'
@@ -1591,8 +1715,9 @@
         return;
       }
 
-      if (!isValidReportNamePrefix(reportName)) {
-        showReportNamePrefixWarning();
+      const reportNameValidation = validateReportNameDetail(reportName);
+      if (!reportNameValidation.valid) {
+        showReportNamePrefixWarning(reportNameValidation);
         return;
       }
 
@@ -1770,25 +1895,43 @@ function validateAndSaveReport() {
 }
 
     function fetchDocumentDataForNonCompleted() {
-        // ดึงค่าที่พิมพ์และตัดช่องว่างหัวท้าย
-        const docNum = document.getElementById('documentNumberNonCompleted').value.trim();
-        if(!docNum) return;
-        
+        const docInput = document.getElementById('documentNumberNonCompleted');
+        const rawDocNum = (docInput.value || '').trim();
+        if (!rawDocNum) {
+          resetNonCompletedDocumentState(true);
+          return;
+        }
+
+        if (!isValidDocumentNumberFormat(rawDocNum)) {
+          resetNonCompletedDocumentState(true);
+          Swal.fire({
+            icon: 'warning',
+            title: 'รูปแบบหมายเลขเอกสารไม่ถูกต้อง',
+            text: getDocumentNumberFormatHelpText(),
+            confirmButtonColor: '#d63031'
+          }).then(() => docInput.focus());
+          return;
+        }
+
+        const normalizedDocNum = normalizeDocumentNumber(rawDocNum);
+        docInput.value = normalizedDocNum;
+        resetNonCompletedDocumentState(true);
         showLoading("กำลังค้นหาข้อมูล...");
-        
-        // เรียกใช้ฟังก์ชันที่มีอยู่แล้วใน Code.gs
+
         google.script.run.withSuccessHandler(function(data){
             hideLoading();
             if(data) {
-                // นำข้อมูลที่เจอมาใส่ในช่องต่างๆ
+                currentNonCompletedDocumentMeta = {
+                  documentNumber: normalizedDocNum,
+                  data: data
+                };
                 document.getElementById('projectName').value = data.reportName || '';
                 setSelectValue('adminGroupNonCompleted', data.adminGroup || '');
-                updateWorkGroupsNonCompleted(); // อัปเดต Dropdown กลุ่มงาน
+                updateWorkGroupsNonCompleted();
                 setSelectValue('workGroupNonCompleted', data.workGroup || '');
                 document.getElementById('responsiblePersonNonCompleted').value = data.responsiblePerson || '';
                 setSelectValue('actionPlanProjectNonCompleted', data.actionPlanProject || '');
-                
-                // [EDITED] เปลี่ยน position เป็น 'center' เพื่อให้อยู่กลางหน้าจอ
+
                 Swal.fire({
                     position: 'center',
                     icon: 'success',
@@ -1797,48 +1940,88 @@ function validateAndSaveReport() {
                     timer: 1500
                 });
             } else {
-                Swal.fire({icon:'error', title:'ไม่พบหมายเลขเอกสารนี้ในระบบ', showConfirmButton:true});
-                // ถ้าหาไม่เจอ ให้เคลียร์ช่องให้ว่าง
-                document.getElementById('projectName').value = '';
-                document.getElementById('adminGroupNonCompleted').value = '';
-                document.getElementById('workGroupNonCompleted').value = '';
-                document.getElementById('responsiblePersonNonCompleted').value = '';
-                document.getElementById('actionPlanProjectNonCompleted').value = '';
+                resetNonCompletedDocumentState(true);
+                Swal.fire({
+                  icon:'error',
+                  title:'ไม่พบหมายเลขเอกสารนี้ในระบบ',
+                  text: 'กรุณาตรวจสอบว่าเลขเอกสารนี้มีอยู่ในชีต ReportNo แล้วจึงส่งบันทึกข้อความ',
+                  showConfirmButton:true,
+                  confirmButtonColor: '#d63031'
+                });
             }
         }).withFailureHandler(function(err){
             hideLoading();
-            Swal.fire({icon: 'error', title: 'เกิดข้อผิดพลาด', text: err.message});
-        }).getDocumentData(docNum);
+            resetNonCompletedDocumentState(true);
+            Swal.fire({icon: 'error', title: 'เกิดข้อผิดพลาด', text: err && err.message ? err.message : err});
+        }).getDocumentData(normalizedDocNum);
     }
 
     function validateAndSaveNonCompletedProject() {
-      // ดึงค่าหมายเลขเอกสาร โดยตัดช่องว่างหัวท้ายออก
-      const documentNumberValue = document.getElementById('documentNumberNonCompleted').value.trim();
+      const docInput = document.getElementById('documentNumberNonCompleted');
+      const rawDocumentNumber = (docInput.value || '').trim();
+      const normalizedDocumentNumber = normalizeDocumentNumber(rawDocumentNumber);
+
+      if (!rawDocumentNumber) {
+        Swal.fire({
+          icon: 'warning',
+          title: 'กรุณาระบุหมายเลขเอกสาร',
+          text: 'หมายเลขเอกสารเป็นข้อมูลที่จำเป็นต้องระบุเสมอ',
+          confirmButtonColor: '#d63031'
+        }).then(() => docInput.focus());
+        return;
+      }
+
+      if (!isValidDocumentNumberFormat(rawDocumentNumber)) {
+        resetNonCompletedDocumentState(true);
+        Swal.fire({
+          icon: 'warning',
+          title: 'รูปแบบหมายเลขเอกสารไม่ถูกต้อง',
+          text: getDocumentNumberFormatHelpText(),
+          confirmButtonColor: '#d63031'
+        }).then(() => docInput.focus());
+        return;
+      }
+
+      docInput.value = normalizedDocumentNumber;
+
+      if (!currentNonCompletedDocumentMeta || currentNonCompletedDocumentMeta.documentNumber !== normalizedDocumentNumber) {
+        Swal.fire({
+          icon: 'warning',
+          title: 'กรุณาค้นหาหมายเลขเอกสารก่อนส่งบันทึกข้อความ',
+          text: 'ต้องเป็นหมายเลขเอกสารที่ค้นพบจริงในระบบ ReportNo และต้องตรงกับเลขที่อยู่ในช่องปัจจุบัน',
+          confirmButtonColor: '#d63031'
+        }).then(() => docInput.focus());
+        return;
+      }
 
       const formData = {
-        projectName: document.getElementById('projectName').value,
+        projectName: document.getElementById('projectName').value.trim(),
         adminGroup: document.getElementById('adminGroupNonCompleted').value,
         workGroup: document.getElementById('workGroupNonCompleted').value,
-        responsiblePerson: document.getElementById('responsiblePersonNonCompleted').value,
-        reason: document.getElementById('reasonNonCompleted').value,
+        responsiblePerson: document.getElementById('responsiblePersonNonCompleted').value.trim(),
+        reason: document.getElementById('reasonNonCompleted').value.trim(),
         actionPlanProject: document.getElementById('actionPlanProjectNonCompleted').value,
-        documentNumber: documentNumberValue // [EDITED] ส่งค่าจริงไปเลย ไม่ใส่ 'N/A' เผื่อไว้แล้ว
+        documentNumber: normalizedDocumentNumber
        };
       const file = document.getElementById('fileUploadNonCompleted').files[0];
 
-      // [EDITED] เพิ่ม !formData.documentNumber เข้าไปในเงื่อนไขการตรวจสอบ
-      if (!formData.documentNumber || !formData.projectName || !formData.adminGroup || !formData.workGroup || !formData.responsiblePerson || !formData.reason || !file || !formData.actionPlanProject) {
+      if (!formData.projectName || !formData.adminGroup || !formData.workGroup || !formData.responsiblePerson || !formData.reason || !file || !formData.actionPlanProject) {
         Swal.fire({ 
             icon: 'warning', 
             title: 'กรุณากรอกข้อมูลให้ครบทุกช่อง', 
-            text: 'หมายเลขเอกสารเป็นข้อมูลที่จำเป็นต้องระบุเสมอ', // เพิ่มข้อความแจ้งเตือนให้ชัดเจนขึ้น
-            showConfirmButton: true 
+            text: 'กรุณาตรวจสอบข้อมูลกิจกรรม เหตุผล และไฟล์ PDF ให้ครบถ้วน',
+            showConfirmButton: true,
+            confirmButtonColor: '#d63031'
         }); 
         return;
       }
 
       showLoading("กำลังเตรียมการอัปโหลด...");
-      const fileMetadata = { projectName: formData.projectName, adminGroup: formData.adminGroup, mimeType: file.type || 'application/pdf' };
+      const fileMetadata = {
+        documentNumber: formData.documentNumber,
+        uploadPurpose: 'NON_COMPLETED',
+        mimeType: file.type || 'application/pdf'
+      };
       
       google.script.run.withSuccessHandler(function(uploadUrl) {
           uploadFileInChunks(file, uploadUrl, formData, 'saveNonCompletedProject');
