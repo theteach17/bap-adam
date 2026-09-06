@@ -1,16 +1,93 @@
 /** Finds or creates the next editable version while preserving CurrentVersion until submission. */
 function pcEnsureDraftVersion_(submission, document, principal) {
   var draft = pcDraftVersion_(submission.SubmissionId);
-  if (draft && [PC_CONST.VERSION_STATUS.DRAFT, PC_CONST.VERSION_STATUS.UPLOADED, PC_CONST.VERSION_STATUS.UPLOADING].indexOf(String(draft.VersionStatus)) !== -1) return draft;
+
+  if (
+    draft &&
+    [
+      PC_CONST.VERSION_STATUS.DRAFT,
+      PC_CONST.VERSION_STATUS.UPLOADED,
+      PC_CONST.VERSION_STATUS.UPLOADING
+    ].indexOf(String(draft.VersionStatus)) !== -1
+  ) {
+    return draft;
+  }
+
   var versions = pcVersionsForSubmission_(submission.SubmissionId);
-  var nextNo = versions.reduce(function(max, row){ return Math.max(max, Number(row.VersionNo || 0)); }, 0) + 1;
+
+  var nextNo = versions.reduce(function(max, row) {
+    return Math.max(max, Number(row.VersionNo || 0));
+  }, 0) + 1;
+
+  /*
+   * Revision V2+ must start from the latest submitted version so the user
+   * edits only what needs correction instead of re-entering the entire report.
+   *
+   * CurrentVersion deliberately remains unchanged until the new version is
+   * successfully submitted for review.
+   */
+  var previousVersion = null;
+  var currentVersionNo = Number(submission.CurrentVersion || 0);
+
+  if (currentVersionNo > 0) {
+    previousVersion = versions.find(function(row) {
+      return Number(row.VersionNo || 0) === currentVersionNo;
+    }) || null;
+  }
+
   return pcAppendObject_(PC_CONST.SHEETS.VERSIONS, {
-    VersionId: pcUuid_(), SubmissionId: submission.SubmissionId, VersionNo: nextNo, VersionStatus: PC_CONST.VERSION_STATUS.DRAFT,
-    FileId:'', FileUrl:'', OriginalFileName:'', StoredFileName:'', FileSizeBytes:'', MimeType:'', UploadedAt:'', UploadedByUsername:'', UploadedByEmail:'', ChangeNote:'',
-    QuantitativeTarget:'', QuantitativeResult:'', QualitativeTarget:'', QualitativeResult:'', ExpectedTarget:'', ExpectedAchievementResult:'',
-    ManagementXbar:'', ManagementSD:'', SatisfactionXbar:'', SatisfactionSD:'', AllocatedBudget:'', ActualBudget:'',
-    ActivityNameSnapshot: document.activityName || '', ProjectSnapshot: document.project || '', ReportValidationType: document.reportValidationTypeLabel || document.reportValidationType || '', PRIndicator:'',
-    DataCorrectedByOfficer:false, DataCorrectedAt:'', DataCorrectedByEmail:''
+    VersionId: pcUuid_(),
+    SubmissionId: submission.SubmissionId,
+    VersionNo: nextNo,
+    VersionStatus: PC_CONST.VERSION_STATUS.DRAFT,
+
+    // A revision must upload its own PDF.
+    FileId: '',
+    FileUrl: '',
+    OriginalFileName: '',
+    StoredFileName: '',
+    FileSizeBytes: '',
+    MimeType: '',
+    UploadedAt: '',
+    UploadedByUsername: '',
+    UploadedByEmail: '',
+
+    // Revision note describes only this new version.
+    ChangeNote: '',
+
+    // Carry forward structured report data from the current version.
+    QuantitativeTarget: previousVersion ? previousVersion.QuantitativeTarget : '',
+    QuantitativeResult: previousVersion ? previousVersion.QuantitativeResult : '',
+    QualitativeTarget: previousVersion ? previousVersion.QualitativeTarget : '',
+    QualitativeResult: previousVersion ? previousVersion.QualitativeResult : '',
+    ExpectedTarget: previousVersion ? previousVersion.ExpectedTarget : '',
+    ExpectedAchievementResult: previousVersion
+      ? previousVersion.ExpectedAchievementResult
+      : '',
+
+    ManagementXbar: previousVersion ? previousVersion.ManagementXbar : '',
+    ManagementSD: previousVersion ? previousVersion.ManagementSD : '',
+    SatisfactionXbar: previousVersion ? previousVersion.SatisfactionXbar : '',
+    SatisfactionSD: previousVersion ? previousVersion.SatisfactionSD : '',
+    AllocatedBudget: previousVersion ? previousVersion.AllocatedBudget : '',
+    ActualBudget: previousVersion ? previousVersion.ActualBudget : '',
+
+    // Master-derived metadata remains server authoritative.
+    ActivityNameSnapshot: document.activityName || '',
+    ProjectSnapshot: document.project || '',
+    ReportValidationType:
+      document.reportValidationTypeLabel ||
+      document.reportValidationType ||
+      '',
+
+    // Preserve an existing internal value, but it remains non-authoritative
+    // from the browser/UI.
+    PRIndicator: previousVersion ? previousVersion.PRIndicator || '' : '',
+
+    // Officer-correction provenance belongs to the version where it occurred.
+    DataCorrectedByOfficer: false,
+    DataCorrectedAt: '',
+    DataCorrectedByEmail: ''
   });
 }
 
