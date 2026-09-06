@@ -35,7 +35,45 @@ async function lookup(){const btn=qs('lookupBtn');btn.disabled=true;qs('lookupSt
 function documentTypeLabel(v){return {REPORT_ACTIVITY:'รายงานผลการดำเนินกิจกรรม',NON_COMPLETED_MEMO:'บันทึกข้อความชี้แจงไม่ได้ดำเนินกิจกรรม',OTHER_DOCUMENT:'เอกสารอื่น',UNKNOWN:'ไม่ทราบประเภท'}[v]||'ไม่ทราบประเภท'}
 function renderMeta(){const d=lookupResult.document;const fields=[['หมายเลขเอกสาร',d.documentNumber],['ประเภทเอกสาร',documentTypeLabel(d.documentType)],['ชื่อเอกสาร',d.documentName],['กลุ่มบริหาร',d.adminGroup],['กลุ่มงาน',d.workGroup],['ผู้รับผิดชอบ',d.responsiblePerson],['Email',d.ownerEmail],['โครงการ',d.project],['รหัสกิจกรรม',d.activityCode],['ชื่อกิจกรรม',d.activityName]];qs('meta').innerHTML=fields.map(([k,v])=>`<div><div class="muted" style="font-size:.82rem">${esc(k)}</div><b>${esc(v||'-')}</b></div>`).join('');let msg='';if(lookupResult.workflow==='PRECHECK')msg='รายงานผลการดำเนินกิจกรรมนี้จะเข้าสู่ขั้นตอน Pre-check ก่อนบันทึกฉบับสมบูรณ์';else if(lookupResult.workflow==='NON_COMPLETED_MEMO')msg='ระบบจะใช้ Workflow บันทึกข้อความเดิม';else if(lookupResult.workflow==='OTHER_DOCUMENT')msg='ระบบจะใช้ Workflow เอกสารอื่นเดิม';else if(lookupResult.workflow==='FINAL')msg='เอกสารนี้ได้รับการบันทึกเป็นเอกสารฉบับสมบูรณ์แล้ว';else msg='ระบบจะใช้ Workflow เดิมตาม Feature Flag ปัจจุบัน';qs('routeNotice').textContent=msg;qs('confirmBtn').disabled=lookupResult.allowedAction==='NONE'||lookupResult.workflow==='FINAL'}
 async function confirmDocument(){const d=lookupResult.document;if(lookupResult.workflow==='NON_COMPLETED_MEMO'){return nav('Index',{workflow:'NON_COMPLETED_MEMO',document:d.documentNumber})}if(lookupResult.workflow==='OTHER_DOCUMENT'){return nav('Index',{workflow:'OTHER_DOCUMENT',document:d.documentNumber})}if(lookupResult.workflow!=='PRECHECK'){return nav('Index',{workflow:'LEGACY_REPORT',document:d.documentNumber})}qs('confirmBtn').disabled=true;try{draft=await server('saveSubmissionDraft',{documentNumber:d.documentNumber});populateDraft(draft.draftData||{});qs('formCard').classList.remove('hidden');renderUploadedFileState();bindAutosave();const detail=await server('getMyDocumentDetail',draft.submissionId,false);renderFixes(detail.responses||[]);window.scrollTo({top:qs('formCard').offsetTop-70,behavior:'smooth'});qs('saveState').textContent='ร่างพร้อมแก้ไข'}catch(e){showToast(e.message);qs('confirmBtn').disabled=false}}
-function populateDraft(data){document.querySelectorAll('[data-field]').forEach(el=>{const v=data[el.dataset.field];if(v!==undefined&&v!==null)el.value=v});dirty=false}
+const TWO_DECIMAL_FIELDS = new Set([
+  'managementXbar',
+  'managementSD',
+  'satisfactionXbar',
+  'satisfactionSD'
+]);
+
+function formatPersistedDecimal(value) {
+  if (value === undefined || value === null || value === '') {
+    return '';
+  }
+
+  const numberValue = Number(value);
+
+  if (!Number.isFinite(numberValue)) {
+    return String(value);
+  }
+
+  return numberValue.toFixed(2);
+}
+
+function populateDraft(data) {
+  document.querySelectorAll('[data-field]').forEach(el => {
+    const fieldName = el.dataset.field;
+    const value = data[fieldName];
+
+    if (value === undefined || value === null) {
+      return;
+    }
+
+    if (TWO_DECIMAL_FIELDS.has(fieldName)) {
+      el.value = formatPersistedDecimal(value);
+    } else {
+      el.value = value;
+    }
+  });
+
+  dirty = false;
+}
 function bindAutosave(){document.querySelectorAll('[data-field]').forEach(el=>{if(el.dataset.bound)return;el.dataset.bound='1';el.addEventListener('input',queueSave);el.addEventListener('change',queueSave)})}
 function renderUploadedFileState(){if(!draft)return;const input=qs('pdf');if(draft.hasUploadedFile){qs('uploadBox').classList.remove('hidden');qs('bar').style.width='100%';qs('uploadText').textContent='มีไฟล์ PDF ที่อัปโหลดแล้ว'+(draft.uploadedFileName?' — '+draft.uploadedFileName:'')+' • สามารถส่งตรวจต่อได้โดยไม่อัปโหลดซ้ำ';input.disabled=true;qs('submitBtn').textContent='ส่งรายงานเพื่อตรวจ'}else{input.disabled=false;qs('submitBtn').textContent='อัปโหลดและส่งตรวจ'}}
 function collect(){const p={documentNumber:lookupResult.document.documentNumber};document.querySelectorAll('[data-field]').forEach(el=>p[el.dataset.field]=el.value);return p}
