@@ -35,10 +35,10 @@ function openReview(submissionId) {
     var items = pcTemplateItems_(payload.submission.TemplateId);
     var quick = pcListObjects_(PC_CONST.SHEETS.QUICK_COMMENTS).filter(function(q){ return pcBool_(q.Active,true); }).sort(function(a,b){ return Number(a.SortOrder||0)-Number(b.SortOrder||0); });
     var history = pcReviewHistory_(payload.submission.SubmissionId);
-    var previousFixItemIds = pcPreviousFixItemIds_(payload.submission.SubmissionId, payload.version.VersionNo);
+    var previousReviewContext = pcPreviousReviewContext_(payload.submission.SubmissionId, payload.version.VersionNo);
     pcAudit_('REVIEW_STARTED', {SubmissionId:payload.submission.SubmissionId,VersionId:payload.version.VersionId,ReviewId:payload.review.ReviewId}, principal, { readOnly:payload.readOnly });
     pcInvalidateDashboardCache_();
-    return { submission:payload.submission, version:payload.version, review:payload.review, items:items, quickComments:quick, history:history, previousFixItemIds:previousFixItemIds, readOnly:payload.readOnly, canAdminTakeover:payload.readOnly&&principal.roles.indexOf(PC_CONST.ROLES.ADMIN)!==-1, lockedBy:payload.readOnly?payload.review.LockedBy:'', pdfUrl:payload.version.FileUrl };
+    return { submission:payload.submission, version:payload.version, review:payload.review, items:items, quickComments:quick, history:history, previousFixItemIds:previousReviewContext.fixItemIds, previousFixDetails:previousReviewContext.fixDetails, previousReview:previousReviewContext.reviewSummary, readOnly:payload.readOnly, canAdminTakeover:payload.readOnly&&principal.roles.indexOf(PC_CONST.ROLES.ADMIN)!==-1, lockedBy:payload.readOnly?payload.review.LockedBy:'', pdfUrl:payload.version.FileUrl };
   } catch (error) { throw pcHandlePublicError_(error, 'openReview', {submissionId:submissionId}); }
 }
 
@@ -222,6 +222,62 @@ function correctStructuredData(submissionId,versionId,fieldName,newValue,reason)
 function pcReviewHistory_(submissionId){
   return pcFilterObjects_(PC_CONST.SHEETS.REVIEWS,function(r){return String(r.SubmissionId)===String(submissionId)&&String(r.ReviewStatus)===PC_CONST.REVIEW_STATUS.COMPLETED;})
     .sort(function(a,b){return String(a.CompletedAt||'').localeCompare(String(b.CompletedAt||''));});
+}
+
+/** Returns FIX details from the immediately previous completed review for revised-version comparison. */
+function pcPreviousReviewContext_(submissionId,currentVersionNo){
+  var empty={fixItemIds:[],fixDetails:{},reviewSummary:null};
+  if(Number(currentVersionNo)<=1)return empty;
+
+  var versions=pcVersionsForSubmission_(submissionId),previous=null;
+  versions.forEach(function(v){
+    if(Number(v.VersionNo)===Number(currentVersionNo)-1)previous=v;
+  });
+  if(!previous)return empty;
+
+  var reviews=pcFilterObjects_(PC_CONST.SHEETS.REVIEWS,function(r){
+    return String(r.VersionId)===String(previous.VersionId)&&String(r.ReviewStatus)===PC_CONST.REVIEW_STATUS.COMPLETED;
+  }).sort(function(a,b){
+    return String(a.CompletedAt||'').localeCompare(String(b.CompletedAt||''));
+  });
+  if(!reviews.length)return empty;
+
+  var priorReview=reviews[reviews.length-1];
+  var fixDetails={};
+  var fixItemIds=[];
+  pcFilterObjects_(PC_CONST.SHEETS.REVIEW_RESPONSES,function(r){
+    return String(r.ReviewId)===String(priorReview.ReviewId)&&String(r.Result)===PC_CONST.REVIEW_RESULT.FIX;
+  }).forEach(function(r){
+    var itemId=String(r.ItemId||'');
+    if(!itemId)return;
+    fixItemIds.push(itemId);
+    fixDetails[itemId]={
+      result:'FIX',
+      issueSeverity:String(r.IssueSeverity||'MINOR'),
+      comment:String(r.Comment||''),
+      pageNumber:r.PageNumber==null?'':String(r.PageNumber),
+      quickCommentIds:String(r.QuickCommentIds||'').split(',').map(function(x){return String(x||'').trim();}).filter(Boolean)
+    };
+  });
+
+  fixItemIds.sort(function(a,b){
+    var ap=Number((fixDetails[a]||{}).pageNumber||999999),bp=Number((fixDetails[b]||{}).pageNumber||999999);
+    if(ap!==bp)return ap-bp;
+    return a.localeCompare(b);
+  });
+
+  return {
+    fixItemIds:fixItemIds,
+    fixDetails:fixDetails,
+    reviewSummary:{
+      versionNo:Number(previous.VersionNo||0),
+      reviewerEmail:String(priorReview.ReviewerEmail||''),
+      reviewerName:String(priorReview.ReviewerName||''),
+      completedAt:String(priorReview.CompletedAt||''),
+      generalComment:String(priorReview.GeneralComment||''),
+      decision:String(priorReview.Decision||'')
+    }
+  };
 }
 
 /** Returns checklist item ids that were FIX in the immediately previous submitted version. */
