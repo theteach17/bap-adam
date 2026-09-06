@@ -28,7 +28,14 @@ function applyPrecheckSchemaMigration() {
 /** Public read-only installation verification for the technical owner. */
 function verifyPrecheckInstallation() {
   pcRequireTechnicalOwner_();
-  return verifyPrecheckInstallation_();
+
+  var result = verifyPrecheckInstallation_();
+
+  console.log(
+    JSON.stringify(result, null, 2)
+  );
+
+  return result;
 }
 
 /** Public read-only health check for the technical owner. */
