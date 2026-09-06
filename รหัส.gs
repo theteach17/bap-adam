@@ -25,6 +25,7 @@ var documentNumberAllowedPattern = /^(บง|บว|บท|บค)\s*\d+\s*\/\s*
 var scriptProp = PropertiesService.getScriptProperties();
 
 function initialSetup() {
+  pcRequireTechnicalOwner_();
   var activeSpreadsheet = SpreadsheetApp.openById('1hGYwUELNW7-MZpjZMYOLtCEChgFrbj06Cj0ILRJw05I');
   scriptProp.setProperty('key', activeSpreadsheet.getId());
 }
@@ -41,8 +42,8 @@ var SESSION_SHEET_NAME = 'Sessions';
 var SESSION_DURATION_MINUTES = 8 * 60; // 8 ชั่วโมงต่อการเข้าสู่ระบบ 1 ครั้ง
 var SESSION_TOUCH_INTERVAL_MINUTES = 5; // ลดการเขียน LastSeenAt ถี่เกินไป
 var PUBLIC_PAGES = ['Login'];
-var PROTECTED_PAGES = ['Index'];
-var DEFAULT_WEB_TITLE = 'ศูนย์สารสนเทศกลาง KIC';
+var PROTECTED_PAGES = ['Index','SubmitDocument','MyDocuments','PrecheckSubmit','PrecheckDetail','PrecheckOfficer','PrecheckReview','PrecheckAdmin'];
+var DEFAULT_WEB_TITLE = 'ศูนย์สารสนเทศกลาง';
 var DEFAULT_LOGO_URL = 'https://img2.pic.in.th/pic/logofd3322a65d133ac4.png';
 
 function getSpreadsheet_() {
@@ -119,9 +120,7 @@ function getReportNamePrefixErrorMessage_(validationResult) {
 }
 
 function normalizeDocumentNumber_(value) {
-  var raw = String(value || '').trim().replace(/\s+/g, ' ');
-  var match = raw.match(/^(บง|บว|บท|บค)\s*(\d+)\s*\/\s*(\d{4})$/);
-  return match ? match[1] + ' ' + match[2] + '/' + match[3] : raw;
+  return normalizeDocumentNumberForPrecheck_(value);
 }
 
 function isValidDocumentNumberFormat_(value) {
@@ -524,18 +523,19 @@ function consumeLoginRedirectIfNeeded_() {
   return false;
 }
 
+function include_(filename) {
+  return HtmlService.createHtmlOutputFromFile(filename).getContent();
+}
+
 function renderPage_(page) {
   var settings = {};
-  try {
-    settings = getGlobalSettings();
-  } catch (e) {
-    Logger.log('getGlobalSettings failed in renderPage_: ' + e.message);
-  }
-  var webTitle = settings['WEB_TITLE'] || DEFAULT_WEB_TITLE;
+  try { settings = getGlobalSettings_(); } catch (e) { Logger.log('Settings unavailable: ' + e.message); }
   var logoUrl = settings['LOGO_URL'] || DEFAULT_LOGO_URL;
-
-  return HtmlService.createHtmlOutputFromFile(page)
-    .setTitle(webTitle)
+  var template = HtmlService.createTemplateFromFile(page);
+  template.appName = pcUserFacingTitle_();
+  template.logoUrl = logoUrl;
+  return template.evaluate()
+    .setTitle(pcUserFacingTitle_())
     .setFaviconUrl(logoUrl)
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
@@ -560,14 +560,23 @@ function doGet(e) {
       if (!session.valid) {
         return renderPage_('Login');
       }
+      if (requestedPage === 'PrecheckOfficer' || requestedPage === 'PrecheckReview') {
+        var officerPrincipal = getCurrentPrincipal_();
+        if (officerPrincipal.roles.indexOf(PC_CONST.ROLES.OFFICER) === -1 && officerPrincipal.roles.indexOf(PC_CONST.ROLES.ADMIN) === -1) return renderPage_('AccessDenied');
+      }
+      if (requestedPage === 'PrecheckAdmin') {
+        var adminPrincipal = getCurrentPrincipal_();
+        if (adminPrincipal.roles.indexOf(PC_CONST.ROLES.ADMIN) === -1) return renderPage_('AccessDenied');
+      }
       return renderPage_(requestedPage);
     }
 
     // หน้าใดที่ไม่อยู่ใน allowlist ให้กลับ Login เสมอ
     return renderPage_('Login');
   } catch (error) {
-    Logger.log('doGet error: ' + error.message);
-    return ContentService.createTextOutput('เกิดข้อผิดพลาดในการโหลดระบบ: ' + error.message);
+    var correlationId = 'C-' + Utilities.getUuid().replace(/-/g, '').substring(0, 16).toUpperCase();
+    console.error(JSON.stringify({ operation:'doGet', correlationId:correlationId, message:error && error.message ? error.message : String(error), stack:error && error.stack ? error.stack : '' }));
+    return ContentService.createTextOutput('ระบบไม่สามารถโหลดหน้าได้ในขณะนี้ กรุณาลองใหม่อีกครั้ง หากยังพบปัญหาให้แจ้งรหัส ' + correlationId);
   }
 }
 
@@ -578,7 +587,7 @@ function checkLogin(username, password) {
   password = (password || '').toString();
 
   if (!username || !password) {
-    logAction(username || 'unknown', 'เข้าสู่ระบบ', 'ล้มเหลว', 'missing_username_or_password');
+    logActionInternal_(username || 'unknown', 'เข้าสู่ระบบ', 'ล้มเหลว', 'missing_username_or_password');
     return { success: false, name: '' };
   }
 
@@ -603,12 +612,12 @@ function checkLogin(username, password) {
     createSession_(username, name);
   }
 
-  logAction(username, 'เข้าสู่ระบบ', loginSuccess ? 'สำเร็จ' : 'ล้มเหลว', name);
+  logActionInternal_(username, 'เข้าสู่ระบบ', loginSuccess ? 'สำเร็จ' : 'ล้มเหลว', name);
   return { success: loginSuccess, name: name };
 }
 
 
-function logAction(username, action, result, documentNumberOrProjectName = '') {
+function logActionInternal_(username, action, result, documentNumberOrProjectName = '') {
   try {
     const ss = SpreadsheetApp.openById(scriptProp.getProperty('key'));
     const logSheet = ss.getSheetByName('Logfile');
@@ -625,6 +634,13 @@ function logAction(username, action, result, documentNumberOrProjectName = '') {
     // ไม่ throw error ต่อ เพื่อให้การทำงานหลักของผู้ใช้ดำเนินต่อไปได้
   }
 }
+
+/** Compatibility wrapper: authenticated callers may append a legacy summary log. Login itself uses the private core. */
+function logAction(username, action, result, documentNumberOrProjectName) {
+  requireAuth_('logAction');
+  return logActionInternal_(username, action, result, documentNumberOrProjectName || '');
+}
+
 
 
 function getData(search, limit, page) {
@@ -749,7 +765,8 @@ function saveData(reportName, adminGroup, workGroup, responsiblePerson, actionPl
     SpreadsheetApp.flush();
     var documentNumber = sheet.getRange(newRow, 2).getValue();
 
-    logAction(auditUser, 'ขอเลขทะเบียนเอกสาร', 'สำเร็จ', documentNumber);
+    pcInvalidateMasterDocumentCache_(documentNumber);
+    logActionInternal_(auditUser, 'ขอเลขทะเบียนเอกสาร', 'สำเร็จ', documentNumber);
     return documentNumber;
   } catch (e) {
     Logger.log('Error in locked saveData: ' + e.message);
@@ -768,6 +785,10 @@ function saveReport(documentNumber, fileId, quantitativeTarget, quantitativeResu
   var session = requireAuth_('saveReport');
   var documentData = getDocumentData(documentNumber);
   if (!documentData) throw new Error('Invalid document number');
+  var trustedDocument = pcMasterDocument_(documentNumber, true);
+  if (trustedDocument && shouldEnforcePrecheck_(trustedDocument, getCurrentPrincipal_())) {
+    throw pcUserError_('รายงานผลการดำเนินกิจกรรมนี้ต้องส่งผ่านระบบ Pre-check ของศูนย์สารสนเทศกลาง', 'PRECHECK_REQUIRED');
+  }
 
   // Backward compatibility: หน้าเว็บเก่าจะส่ง loggedUser มาเป็น argument ที่ 12
   if (arguments.length <= 12) {
@@ -814,74 +835,82 @@ function saveReport(documentNumber, fileId, quantitativeTarget, quantitativeResu
   var managementSDValue = validateDecimalTwoPlaces_(managementSD, 0.01, 1.00, 'ค่า SD ผลการบริหารกิจกรรม', requiresStatistics);
 
   var auditUser = session.displayName || session.username || documentData.responsiblePerson || loggedUser;
-  var fileUrl;
-  try {
-    fileUrl = DriveApp.getFileById(fileId).getUrl();
-  } catch (e) {
-    Logger.log(e);
-    throw new Error('ไม่พบไฟล์ที่อัปโหลด (ID: ' + fileId + ')');
-  }
-
   var ss = getSpreadsheet_();
   var reportSubmitSheet = ss.getSheetByName(reportSubmitSheetName);
   if (!reportSubmitSheet) throw new Error("System Error: ไม่พบแผ่นงานชื่อ '" + reportSubmitSheetName + "'");
-
   ensureReportSubmitExtendedColumns_(reportSubmitSheet);
 
-  var newRowData = new Array(25).fill(''); // A-Y
-  newRowData[1] = documentNumber; // B
-  newRowData[2] = documentData.reportName; // C
-  newRowData[3] = documentData.adminGroup; // D
-  newRowData[4] = documentData.workGroup; // E
-  newRowData[5] = documentData.responsiblePerson; // F
-  newRowData[6] = fileUrl; // G
-  newRowData[7] = quantitativeTarget; // H
-  newRowData[8] = qualitativeTarget; // I
-  newRowData[9] = quantitativeResult; // J
-  newRowData[10] = qualitativeResult; // K
-  newRowData[11] = expectedTarget; // L
-  newRowData[12] = managementXbarValue === '' ? '' : managementXbarValue; // M: คงคอลัมน์เดิม
-  newRowData[14] = actionPlanProject; // O
-  newRowData[15] = documentData.email; // P
-  newRowData[16] = allocatedBudget; // Q
-  newRowData[17] = actualBudget; // R
-  newRowData[18] = (documentData.activityCode || '').toString().trim().toUpperCase(); // S
-  newRowData[19] = activityName; // T
-  newRowData[20] = expectedAchievementResult; // U
-  newRowData[21] = satisfactionXbarValue === '' ? '' : satisfactionXbarValue; // V
-  newRowData[22] = satisfactionSDValue === '' ? '' : satisfactionSDValue; // W
-  newRowData[23] = managementSDValue === '' ? '' : managementSDValue; // X
-  newRowData[24] = validationInfo.label || validationInfo.type; // Y
-
-  // คงตรรกะเดิม: append รายการธุรกรรมก่อน แล้วจึง update master list ภายใต้ lock
-  reportSubmitSheet.appendRow(newRowData);
-
-  const lock = LockService.getScriptLock();
-  if (!lock.tryLock(30000)) {
-    throw new Error('Server is busy, could not update master list. Please try again.');
-  }
-
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) throw new Error('ระบบกำลังประมวลผลคำขออื่น โปรดรอสักครู่แล้วลองใหม่อีกครั้ง');
+  var fileUrl = '';
   try {
-    var reportNoSheet = ss.getSheetByName(sheetName);
-    if (!reportNoSheet) throw new Error("System Error: ไม่พบแผ่นงานชื่อ '" + sheetName + "'");
-    var data = reportNoSheet.getDataRange().getValues();
-    var updated = false;
-    for (var i = 0; i < data.length; i++) {
-      if (String(data[i][1] || '').trim() === documentNumber) {
-        reportNoSheet.getRange(i + 1, 8).setValue(fileUrl); // H
-        updated = true;
-        break;
-      }
+    var freshMaster = pcMasterDocument_(documentNumber, true);
+    if (!freshMaster) throw new Error('ไม่พบหมายเลขเอกสารในชีตหลักระหว่างบันทึกรายงาน');
+    if (shouldEnforcePrecheck_(freshMaster, getCurrentPrincipal_())) throw pcUserError_('รายงานผลการดำเนินกิจกรรมนี้ต้องส่งผ่านระบบ Pre-check ของศูนย์สารสนเทศกลาง', 'PRECHECK_REQUIRED');
+
+    var allowedLegacyPurposes = freshMaster.documentType === PC_CONST.DOCUMENT_TYPES.OTHER_DOCUMENT
+      ? [PC_CONST.UPLOAD_PURPOSE.OTHER_DOCUMENT]
+      : [PC_CONST.UPLOAD_PURPOSE.LEGACY_REPORT];
+    var legacyBinding = resolveLegacyFileBinding_(fileId, documentNumber, allowedLegacyPurposes, true);
+    fileUrl = String(legacyBinding.fileUrl || '').trim();
+    if (!fileUrl) throw new Error('ไม่พบ URL ของไฟล์ที่อัปโหลด');
+
+    var currentFinal = String(freshMaster.finalLink || '').trim();
+    var legacyState = pcLegacyReportSubmitState_(documentNumber, fileUrl);
+    if (currentFinal && !pcSameDriveFile_(currentFinal, fileUrl)) throw pcUserError_('เอกสารนี้มีไฟล์ฉบับสมบูรณ์อื่นอยู่แล้ว ระบบจึงไม่เขียนทับ', 'LEGACY_FINAL_LINK_CONFLICT');
+    if (legacyState.conflictRows.length && !legacyState.sameRow) throw pcUserError_('พบข้อมูล ReportSubmit เดิมของหมายเลขเอกสารนี้ที่ใช้ไฟล์คนละรายการ กรุณาแจ้งผู้ดูแลระบบ', 'LEGACY_SUBMIT_CONFLICT');
+
+    // Revalidate statistic rules from the current trusted master before any write.
+    var lockedValidation = resolveReportValidationType_(freshMaster.documentName, freshMaster.documentNumber, reportValidationType, true);
+    var lockedRequiresStatistics = lockedValidation.requiresStatistics === true;
+    var lockedManagementXbar = validateDecimalTwoPlaces_(expectedResult, 0.01, 5.00, 'ค่า X̄ (X Bar) ของผลการบริหารกิจกรรม', lockedRequiresStatistics);
+    var lockedSatisfactionXbar = validateDecimalTwoPlaces_(satisfactionXbar, 0.01, 5.00, 'ค่า X̄ (X Bar) ความพึงพอใจ', lockedRequiresStatistics);
+    var lockedSatisfactionSD = validateDecimalTwoPlaces_(satisfactionSD, 0.01, 1.00, 'ค่า SD ความพึงพอใจ', lockedRequiresStatistics);
+    var lockedManagementSD = validateDecimalTwoPlaces_(managementSD, 0.01, 1.00, 'ค่า SD ผลการบริหารกิจกรรม', lockedRequiresStatistics);
+
+    if (!legacyState.sameRow) {
+      var newRowData = new Array(25).fill(''); // A:Y
+      newRowData[1] = freshMaster.documentNumber;
+      newRowData[2] = freshMaster.documentName;
+      newRowData[3] = freshMaster.adminGroup;
+      newRowData[4] = freshMaster.workGroup;
+      newRowData[5] = freshMaster.responsiblePerson;
+      newRowData[6] = fileUrl;
+      newRowData[7] = quantitativeTarget;
+      newRowData[8] = qualitativeTarget;
+      newRowData[9] = quantitativeResult;
+      newRowData[10] = qualitativeResult;
+      newRowData[11] = expectedTarget;
+      newRowData[12] = lockedManagementXbar === '' ? '' : lockedManagementXbar;
+      newRowData[14] = freshMaster.project;
+      newRowData[15] = freshMaster.ownerEmail;
+      newRowData[16] = allocatedBudget;
+      newRowData[17] = actualBudget;
+      newRowData[18] = freshMaster.activityCode;
+      newRowData[19] = freshMaster.activityName;
+      newRowData[20] = expectedAchievementResult;
+      newRowData[21] = lockedSatisfactionXbar === '' ? '' : lockedSatisfactionXbar;
+      newRowData[22] = lockedSatisfactionSD === '' ? '' : lockedSatisfactionSD;
+      newRowData[23] = lockedManagementSD === '' ? '' : lockedManagementSD;
+      newRowData[24] = lockedValidation.label || lockedValidation.type;
+      reportSubmitSheet.appendRow(newRowData);
+      SpreadsheetApp.flush();
     }
-    if (!updated) throw new Error('ไม่พบหมายเลขเอกสารในชีตหลักหลังจากบันทึกรายงาน');
-  } catch (e) {
-    Logger.log('Error in locked saveReport (part 2): ' + e.message);
-    throw e;
+
+    if (!currentFinal) {
+      var reportNoSheet = ss.getSheetByName(sheetName);
+      if (!reportNoSheet) throw new Error("System Error: ไม่พบแผ่นงานชื่อ '" + sheetName + "'");
+      reportNoSheet.getRange(freshMaster.rowNumber, 8).setValue(fileUrl);
+      SpreadsheetApp.flush();
+    }
+    markLegacyFileBindingUsed_(fileId);
   } finally {
     lock.releaseLock();
   }
 
-  logAction(auditUser, 'ส่งรายงาน', 'สำเร็จ', documentNumber);
+  pcInvalidateMasterDocumentCache_(documentNumber);
+  logActionInternal_(auditUser, 'ส่งรายงาน', 'สำเร็จ', documentNumber);
+
 }
 
 
@@ -916,71 +945,59 @@ function saveNonCompletedProject(projectName, adminGroup, workGroup, responsible
     throw new Error('ไม่พบหมายเลขเอกสารนี้ในชีต ReportNo จึงไม่สามารถบันทึกลง ReportSubmit ได้');
   }
 
-  var fileUrl;
-  try {
-    fileUrl = DriveApp.getFileById(fileId).getUrl();
-  } catch (e) {
-    Logger.log(e);
-    throw new Error('ไม่พบไฟล์ที่อัปโหลด (ID: ' + fileId + ')');
-  }
-
-  // ใช้ข้อมูลจาก ReportNo เป็นแหล่งอ้างอิงหลัก เพื่อลดความเสี่ยงจากการแก้ข้อมูลในหน้าเว็บหลังค้นหาเลขเอกสาร
-  projectName = projectName || documentRecord.reportName;
-  adminGroup = documentRecord.adminGroup || String(adminGroup || '').trim();
-  workGroup = documentRecord.workGroup || String(workGroup || '').trim();
-  responsiblePerson = documentRecord.responsiblePerson || String(responsiblePerson || '').trim();
-  actionPlanProject = documentRecord.actionPlanProject || String(actionPlanProject || '').trim();
-  var activityCode = String(documentRecord.activityCode || '').trim().toUpperCase();
-
-  if (!projectName || !adminGroup || !workGroup || !responsiblePerson || !actionPlanProject) {
-    throw new Error('ข้อมูลเอกสารใน ReportNo ไม่ครบถ้วน กรุณาตรวจสอบรายการเลขเอกสารนี้ก่อนส่งบันทึกข้อความ');
-  }
-
   var spreadsheet = getSpreadsheet_();
   var reportSubmitSheet = spreadsheet.getSheetByName(reportSubmitSheetName);
   if (!reportSubmitSheet) throw new Error("System Error: ไม่พบแผ่นงานชื่อ '" + reportSubmitSheetName + "'");
 
-  const lock = LockService.getScriptLock();
-  if (!lock.tryLock(30000)) {
-    throw new Error('ระบบกำลังประมวลผลคำขออื่น ไม่สามารถบันทึกข้อมูลได้ โปรดลองอีกครั้ง');
-  }
-
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) throw new Error('ระบบกำลังประมวลผลคำขออื่น ไม่สามารถบันทึกข้อมูลได้ โปรดลองอีกครั้ง');
+  var savedProjectName = projectName;
   try {
-    // ตรวจซ้ำภายใต้ lock เพื่อให้มั่นใจว่าเลขเอกสารยังมีอยู่ก่อน append ข้อมูลจริง
-    var lockedRecord = findReportNoRecordByDocumentNumber_(documentNumber);
-    if (!lockedRecord) {
-      throw new Error('ไม่พบหมายเลขเอกสารนี้ในชีต ReportNo ระหว่างบันทึกข้อมูล');
+    var freshMaster = pcMasterDocument_(documentNumber, true);
+    if (!freshMaster) throw new Error('ไม่พบหมายเลขเอกสารนี้ในชีต ReportNo ระหว่างบันทึกข้อมูล');
+    if (freshMaster.documentType !== PC_CONST.DOCUMENT_TYPES.NON_COMPLETED_MEMO) throw pcUserError_('หมายเลขเอกสารนี้ไม่ใช่บันทึกข้อความตาม Workflow ที่กำหนด', 'WRONG_WORKFLOW');
+    var legacyBinding = resolveLegacyFileBinding_(fileId, documentNumber, [PC_CONST.UPLOAD_PURPOSE.NON_COMPLETED], true);
+    var fileUrl = String(legacyBinding.fileUrl || '').trim();
+    if (!fileUrl) throw new Error('ไม่พบ URL ของไฟล์ที่อัปโหลด');
+    var currentMemo = String(freshMaster.nonCompletedMemoLink || '').trim();
+    var legacyState = pcLegacyReportSubmitState_(documentNumber, fileUrl);
+    if (currentMemo && !pcSameDriveFile_(currentMemo, fileUrl)) throw pcUserError_('เอกสารนี้มีบันทึกข้อความไฟล์อื่นอยู่แล้ว ระบบจึงไม่เขียนทับ', 'LEGACY_MEMO_LINK_CONFLICT');
+    if (legacyState.conflictRows.length && !legacyState.sameRow) throw pcUserError_('พบข้อมูล ReportSubmit เดิมของหมายเลขเอกสารนี้ที่ใช้ไฟล์คนละรายการ กรุณาแจ้งผู้ดูแลระบบ', 'LEGACY_SUBMIT_CONFLICT');
+
+    savedProjectName = freshMaster.documentName;
+    if (!legacyState.sameRow) {
+      var rowData = new Array(19).fill('');
+      rowData[1] = freshMaster.documentNumber;
+      rowData[2] = freshMaster.documentName;
+      rowData[3] = freshMaster.adminGroup;
+      rowData[4] = freshMaster.workGroup;
+      rowData[5] = freshMaster.responsiblePerson;
+      rowData[6] = fileUrl;
+      rowData[13] = reason;
+      rowData[14] = freshMaster.project;
+      rowData[15] = freshMaster.ownerEmail;
+      rowData[18] = freshMaster.activityCode;
+      reportSubmitSheet.appendRow(rowData);
+      SpreadsheetApp.flush();
     }
 
-    var rowData = new Array(19).fill('');
-    rowData[1] = lockedRecord.documentNumber; // B
-    rowData[2] = projectName; // C
-    rowData[3] = adminGroup; // D
-    rowData[4] = workGroup; // E
-    rowData[5] = responsiblePerson; // F
-    rowData[6] = fileUrl; // G
-    rowData[13] = reason; // N
-    rowData[14] = actionPlanProject; // O
-    rowData[18] = activityCode; // S
-
-    reportSubmitSheet.appendRow(rowData);
-
-    var reportNoSheet = spreadsheet.getSheetByName(sheetName);
-    if (!reportNoSheet) throw new Error("System Error: ไม่พบแผ่นงานชื่อ '" + sheetName + "'");
-    reportNoSheet.getRange(lockedRecord.rowNumber, 7).setValue(fileUrl); // G
-
-  } catch (e) {
-    Logger.log('Error in locked saveNonCompletedProject: ' + e.message);
-    throw e;
+    if (!currentMemo) {
+      var reportNoSheet = spreadsheet.getSheetByName(sheetName);
+      if (!reportNoSheet) throw new Error("System Error: ไม่พบแผ่นงานชื่อ '" + sheetName + "'");
+      reportNoSheet.getRange(freshMaster.rowNumber, 7).setValue(fileUrl);
+      SpreadsheetApp.flush();
+    }
+    markLegacyFileBindingUsed_(fileId);
   } finally {
     lock.releaseLock();
   }
 
-  logAction(auditUser, 'ส่งบันทึกข้อความโครงการ/กิจกรรม ที่ไม่ได้ดำเนินการ', 'สำเร็จ', projectName);
+  pcInvalidateMasterDocumentCache_(documentNumber);
+  logActionInternal_(auditUser, 'ส่งบันทึกข้อความโครงการ/กิจกรรม ที่ไม่ได้ดำเนินการ', 'สำเร็จ', savedProjectName);
 }
 
 function auditInvalidReportSubmitDocumentNumbers() {
-  requireAuth_('auditInvalidReportSubmitDocumentNumbers');
+  pcRequireTechnicalOwner_();
 
   var ss = getSpreadsheet_();
   var reportSubmitSheet = ss.getSheetByName(reportSubmitSheetName);
@@ -1207,134 +1224,27 @@ function getActivityInfo(activityCode) {
 // ==========================================
 function getUploadUrl(metadata) {
   requireAuth_('getUploadUrl');
-
-  try {
-    metadata = metadata || {};
-    var folderId;
-    var fileName;
-    var settings = getGlobalSettings();
-
-    if (metadata.uploadPurpose === 'NON_COMPLETED') {
-      var nonCompletedDocNo = normalizeDocumentNumber_(metadata.documentNumber);
-      if (!nonCompletedDocNo || !isValidDocumentNumberFormat_(nonCompletedDocNo)) {
-        throw new Error(getDocumentNumberFormatErrorMessage_());
-      }
-
-      var nonCompletedRecord = findReportNoRecordByDocumentNumber_(nonCompletedDocNo);
-      if (!nonCompletedRecord) {
-        throw new Error('ไม่พบหมายเลขเอกสารนี้ในชีต ReportNo จึงไม่สามารถอัปโหลดบันทึกข้อความได้');
-      }
-
-      switch (nonCompletedRecord.adminGroup) {
-        case 'กลุ่มบริหารวิชาการ':   folderId = settings['FOLDER_ACADEMIC']; break;
-        case 'กลุ่มบริหารงบประมาณ':  folderId = settings['FOLDER_BUDGET']; break;
-        case 'กลุ่มบริหารทั่วไป':    folderId = settings['FOLDER_GENERAL']; break;
-        case 'กลุ่มบริหารงานบุคคล':  folderId = settings['FOLDER_PERSONNEL']; break;
-        default: throw new Error('Invalid admin group');
-      }
-      fileName = `ไม่ได้ดำเนินการ-${nonCompletedDocNo}-${(nonCompletedRecord.reportName || '').toString().substring(0, 50)}.pdf`;
-
-    } else if (metadata.documentNumber) {
-      const documentData = getDocumentData(metadata.documentNumber);
-      if (!documentData) throw new Error('Invalid document number');
-      var normalizedDocumentNumber = documentData.documentNumber || String(metadata.documentNumber || '').trim();
-      
-      switch (documentData.adminGroup) {
-        case 'กลุ่มบริหารวิชาการ':   folderId = settings['FOLDER_ACADEMIC']; break;
-        case 'กลุ่มบริหารงบประมาณ':  folderId = settings['FOLDER_BUDGET']; break;
-        case 'กลุ่มบริหารทั่วไป':    folderId = settings['FOLDER_GENERAL']; break;
-        case 'กลุ่มบริหารงานบุคคล':  folderId = settings['FOLDER_PERSONNEL']; break;
-        default: throw new Error('Invalid admin group');
-      }
-      fileName = `${normalizedDocumentNumber}-${(documentData.reportName || '').toString().substring(0, 50)}.pdf`;
-
-    } 
-    else if (metadata.projectName) {
-      switch (metadata.adminGroup) {
-        case 'กลุ่มบริหารวิชาการ':   folderId = settings['FOLDER_ACADEMIC']; break;
-        case 'กลุ่มบริหารงบประมาณ':  folderId = settings['FOLDER_BUDGET']; break;
-        case 'กลุ่มบริหารทั่วไป':    folderId = settings['FOLDER_GENERAL']; break;
-        case 'กลุ่มบริหารงานบุคคล':  folderId = settings['FOLDER_PERSONNEL']; break;
-        default: throw new Error('Invalid admin group');
-      }
-      var truncatedProjectName = metadata.projectName.length > 50 ? metadata.projectName.substring(0, 47) + "..." : metadata.projectName;
-      fileName = `ไม่ได้ดำเนินการ-${truncatedProjectName}.pdf`;
-
-    } else {
-      throw new Error("Invalid metadata for upload");
-    }
-
-    if (!folderId) {
-      throw new Error("ไม่พบ Folder ID ใน Settings Sheet สำหรับกลุ่มบริหารนี้");
-    }
-
-    const accessToken = ScriptApp.getOAuthToken();
-    const driveMetadata = {
-      name: fileName,
-      mimeType: metadata.mimeType || 'application/pdf',
-      parents: [folderId]
-    };
-
-    const url = "https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable";
-    const options = {
-      method: "POST",
-      headers: { "Authorization": "Bearer " + accessToken, "Content-Type": "application/json" },
-      payload: JSON.stringify(driveMetadata),
-      muteHttpExceptions: true
-    };
-
-    const response = UrlFetchApp.fetch(url, options);
-    const uploadUrl = response.getHeaders()["Location"]; 
-
-    if (!uploadUrl) {
-      Logger.log("Error getting upload URL: " + response.getContentText());
-      throw new Error("ไม่สามารถเริ่มต้นการอัปโหลดได้ (Server Error)");
-    }
-    
-    return uploadUrl; 
-
-  } catch (e) {
-    Logger.log(e);
-    throw new Error("Server error: " + e.message);
-  }
+  metadata = metadata || {};
+  var started = beginChunkUpload({
+    documentNumber: metadata.documentNumber,
+    uploadPurpose: metadata.uploadPurpose || '',
+    purpose: metadata.purpose || '',
+    fileName: metadata.fileName || '',
+    mimeType: metadata.mimeType || 'application/pdf',
+    totalSize: metadata.totalSize || 0
+  });
+  return started.uploadSessionId;
 }
 
-
-function uploadChunk(uploadUrl, chunkBase64, startByte, chunkEndByte, totalSize) {
+function uploadChunk(uploadSessionId, chunkBase64, startByte, chunkEndByte, totalSize) {
   requireAuth_('uploadChunk');
-
-  try {
-    const accessToken = ScriptApp.getOAuthToken();
-    const chunkBlob = Utilities.base64Decode(chunkBase64);
-
-    const options = {
-      method: "PUT",
-      payload: chunkBlob,
-      headers: {
-        "Authorization": "Bearer " + accessToken,
-        "Content-Range": `bytes ${startByte}-${chunkEndByte}/${totalSize}`
-      },
-      muteHttpExceptions: true 
-    };
-
-    const response = UrlFetchApp.fetch(uploadUrl, options);
-    
-    return {
-      statusCode: response.getResponseCode(),
-      headers: response.getHeaders(),
-      content: response.getContentText() 
-    };
-
-  } catch (e) {
-    Logger.log(e);
-    throw new Error("Chunk upload failed: " + e.message);
-  }
+  return uploadChunkLegacyCompatible_(uploadSessionId, chunkBase64, startByte, chunkEndByte, totalSize);
 }
 
 // ==========================================
 // [NEW] เพิ่มฟังก์ชันใหม่: สำหรับดึงค่าจาก Settings Sheet
 // ==========================================
-function getGlobalSettings() {
+function getGlobalSettings_() {
   var scriptProp = PropertiesService.getScriptProperties();
   var key = scriptProp.getProperty('key');
   var ss = key ? SpreadsheetApp.openById(key) : SpreadsheetApp.getActiveSpreadsheet();
@@ -1359,6 +1269,13 @@ function getGlobalSettings() {
 // ==========================================
 // [NEW] เพิ่มฟังก์ชันใหม่: สำหรับดึง URL ของ Web App ปัจจุบันอัตโนมัติ
 // ==========================================
+
+/** Compatibility wrapper: settings are available only to authenticated application users. */
+function getGlobalSettings() {
+  requireAuth_('getGlobalSettings');
+  return getGlobalSettings_();
+}
+
 
 function getWebAppUrl() {
   // Compatibility mode:
