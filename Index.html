@@ -4,7 +4,7 @@
   <base target="_top">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ระบบศูนย์สารสนเทศกลาง KIC</title>
+  <title>ศูนย์สารสนเทศกลาง</title>
   
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
@@ -471,7 +471,7 @@
     <div class="sidebar-header">
       <img src="https://img2.pic.in.th/pic/logofd3322a65d133ac4.png" alt="Logo">
       <div class="brand-text">
-        ศูนย์สารสนเทศกลาง<br><span>KIC System</span>
+        ศูนย์สารสนเทศกลาง<br><span>ระบบจัดการเอกสาร</span>
       </div>
     </div>
     
@@ -488,8 +488,22 @@
         <i class="fas fa-plus-circle text-success"></i> ขอเลขทะเบียนเอกสาร
       </button>
       
-      <button class="nav-btn" onclick="showReportForm()">
-        <i class="fas fa-file-signature text-primary"></i> ส่งรายงานฉบับสมบูรณ์
+      <button class="nav-btn" onclick="goPage('SubmitDocument')">
+        <i class="fas fa-paper-plane text-primary"></i> ส่งเอกสาร
+      </button>
+
+      <button class="nav-btn" onclick="goPage('MyDocuments')">
+        <i class="fas fa-folder-open text-info"></i> รายการเอกสารของฉัน
+      </button>
+
+      <div id="officerMenu" style="display:none">
+        <div class="menu-label mt-4">งานตรวจเอกสาร</div>
+        <button class="nav-btn" onclick="goPage('PrecheckOfficer')"><i class="fas fa-clipboard-check text-warning"></i> ตรวจรายงาน Pre-check</button>
+        <button class="nav-btn" id="adminTemplateMenu" style="display:none" onclick="goPage('PrecheckAdmin')"><i class="fas fa-list-check text-secondary"></i> จัดการแบบตรวจ</button>
+      </div>
+
+      <button class="nav-btn legacy-report-flow-btn" onclick="showReportForm()">
+        <i class="fas fa-file-signature text-primary"></i> ส่งรายงานฉบับสมบูรณ์ (Workflow เดิม)
       </button>
       
       <button class="nav-btn" onclick="showNonCompletedProjectForm()">
@@ -573,7 +587,7 @@
     </div> </div> <div class="footer-marquee">
     <marquee id="marquee" scrollamount="5">
       <img src="https://img2.pic.in.th/pic/logofd3322a65d133ac4.png" alt="Logo">
-      ยินดีต้อนรับสู่ศูนย์สารสนเทศกลาง Klaeng Information Center : งานแผนงานและสารสนเทศโรงเรียน กลุ่มบริหารงบประมาณ โรงเรียนแกลง วิทยสถาวร : รวดเร็ว ฉับไว โปร่งใส ตรวจสอบได้ : 
+      ยินดีต้อนรับสู่ศูนย์สารสนเทศกลาง : งานแผนงานและสารสนเทศโรงเรียน กลุ่มบริหารงบประมาณ โรงเรียนแกลง วิทยสถาวร : รวดเร็ว ฉับไว โปร่งใส ตรวจสอบได้ : 
       <span id="reportCounts">Loading stats...</span>
     </marquee>
   </div>
@@ -606,7 +620,7 @@
             <div class="mb-3">
               <label for="activityName" class="form-label">ชื่อกิจกรรม <span class="text-danger">*</span></label>
               <input type="text" class="form-control" id="activityName" required placeholder="หากไม่มีรหัสกิจกรรม ต้องพิมพ์ชื่อกิจกรรมโดยขึ้นต้นด้วยคำว่า กิจกรรม">
-              <div class="form-text">ระบบจะเติมชื่อกิจกรรมให้อัตโนมัติเมื่อพบรหัสกิจกรรมในฐานข้อมูล LinkBAP</div>
+              <div class="form-text">ระบบจะเติมชื่อกิจกรรมให้อัตโนมัติเมื่อพบรหัสกิจกรรมในฐานข้อมูลกิจกรรม</div>
             </div>
 
             <div class="row g-3 mb-3">
@@ -887,7 +901,8 @@
     let workGroups = {};
     let currentReportDocumentMeta = null;
     let currentNonCompletedDocumentMeta = null;
-    const CHUNK_SIZE = 2 * 1024 * 1024; // 2MB Chunk Size
+    let CHUNK_SIZE = 2 * 1024 * 1024; // Server may override via safe client config
+    let pcClientConfig = { maxFileMb: 0, roles: [], precheckEnabled: false };
 
     // --- Window OnLoad ---
     window.onload = function() {
@@ -895,21 +910,42 @@
       fetchData();
       updateMarquee();
       setupNonCompletedModalResetHandler();
+      loadNavigationContext();
+      handleLegacyRoute();
       setInterval(updateClock, 1000);
     };
 
-    // --- User Profile (Fix: Use google.script.url.getLocation) ---
+    function goPage(page, params = {}) {
+      google.script.run.withSuccessHandler(function(url){ window.open(url, '_top'); })
+        .withFailureHandler(onUploadFailed).getAppNavigationUrl(page, params);
+    }
+
+    function loadNavigationContext() {
+      google.script.run.withSuccessHandler(function(ctx){
+        pcClientConfig = ctx || pcClientConfig;
+        if (ctx && ctx.chunkSizeBytes) CHUNK_SIZE = Number(ctx.chunkSizeBytes);
+        const roles = (ctx && ctx.roles) || [];
+        if (roles.includes('PRECHECK_OFFICER') || roles.includes('PRECHECK_ADMIN')) document.getElementById('officerMenu').style.display = 'block';
+        if (roles.includes('PRECHECK_ADMIN')) document.getElementById('adminTemplateMenu').style.display = 'flex';
+        if (ctx && ctx.enforceReportActivity) document.querySelectorAll('.legacy-report-flow-btn').forEach(el => el.style.display = 'none');
+        if (ctx && ctx.displayName) { document.getElementById('displayUserName').textContent = ctx.displayName; document.getElementById('userAvatar').textContent = ctx.displayName.charAt(0).toUpperCase(); }
+      }).getNavigationContext();
+    }
+
+    function handleLegacyRoute() {
+      google.script.url.getLocation(function(location){
+        const workflow = location.parameter.workflow || '';
+        const documentNumber = location.parameter.document || '';
+        if (!workflow || !documentNumber) return;
+        if (workflow === 'NON_COMPLETED_MEMO') { showNonCompletedProjectForm(); const el=document.getElementById('documentNumberNonCompleted'); if(el){el.value=documentNumber; setTimeout(fetchDocumentDataForNonCompleted,100);} }
+        if (workflow === 'OTHER_DOCUMENT' || workflow === 'LEGACY_REPORT') { showReportForm(); const el=document.getElementById('documentNumber'); if(el){el.value=documentNumber; setTimeout(fetchDocumentData,100);} }
+      });
+    }
+
+    // --- User Profile: authoritative identity is loaded from the server navigation context. ---
     function setupUserProfile() {
-        google.script.url.getLocation(function(location) {
-            const name = location.parameter.name; 
-            if (name) {
-                document.getElementById('displayUserName').textContent = decodeURIComponent(name);
-                document.getElementById('userAvatar').textContent = decodeURIComponent(name).charAt(0).toUpperCase();
-            } else {
-                document.getElementById('displayUserName').textContent = "ผู้เยี่ยมชม";
-                document.getElementById('userAvatar').textContent = "G";
-            }
-        });
+        document.getElementById('displayUserName').textContent = "กำลังโหลด...";
+        document.getElementById('userAvatar').textContent = "•";
     }
 
     function updateClock() {
@@ -1128,8 +1164,10 @@
     const DOCUMENT_NUMBER_FORMAT_PATTERN = /^(บง|บว|บท|บค)\s*\d+\s*\/\s*\d{4}$/;
 
     function normalizeDocumentNumber(value) {
-      const raw = (value || '').toString().trim().replace(/\s+/g, ' ');
-      const match = raw.match(/^(บง|บว|บท|บค)\s*(\d+)\s*\/\s*(\d{4})$/);
+      const thai = '๐๑๒๓๔๕๖๗๘๙';
+      let raw = (value || '').toString().replace(/[\u200B-\u200D\uFEFF]/g, '').replace(/\u00A0/g, ' ').replace(/／/g, '/');
+      raw = raw.replace(/[๐-๙]/g, ch => String(thai.indexOf(ch))).replace(/\s+/g, ' ').replace(/\s*\/\s*/g, '/').trim().replace(/[\s.,;:!?]+$/g, '');
+      const match = raw.match(/^(บง|บว|บท|บค)\s*(\d+)\/(\d{4})$/);
       return match ? `${match[1]} ${match[2]}/${match[3]}` : raw;
     }
 
@@ -1222,7 +1260,7 @@
         el.value = value || '';
         el.readOnly = true;
         el.classList.add('bg-light');
-        el.placeholder = 'ระบบเติมชื่อกิจกรรมให้อัตโนมัติจาก LinkBAP';
+        el.placeholder = 'ระบบเติมชื่อกิจกรรมให้อัตโนมัติจากฐานข้อมูลกิจกรรม';
     }
 
     function setActivityNameInvalidCodeMode() {
@@ -1883,8 +1921,11 @@ function validateAndSaveReport() {
     }).then((result) => {
         if (!result.isConfirmed) return;
         showLoading("กำลังเตรียมการอัปโหลด...");
+        if (pcClientConfig.maxFileMb && file.size > Number(pcClientConfig.maxFileMb) * 1024 * 1024) { onUploadFailed(new Error(`ไฟล์มีขนาดเกิน ${pcClientConfig.maxFileMb} MB`)); return; }
         const fileMetadata = {
             documentNumber: formData.documentNumber,
+            fileName: file.name,
+            totalSize: file.size,
             mimeType: file.type || 'application/pdf'
         };
 
@@ -2017,9 +2058,12 @@ function validateAndSaveReport() {
       }
 
       showLoading("กำลังเตรียมการอัปโหลด...");
+      if (pcClientConfig.maxFileMb && file.size > Number(pcClientConfig.maxFileMb) * 1024 * 1024) { onUploadFailed(new Error(`ไฟล์มีขนาดเกิน ${pcClientConfig.maxFileMb} MB`)); return; }
       const fileMetadata = {
         documentNumber: formData.documentNumber,
         uploadPurpose: 'NON_COMPLETED',
+        fileName: file.name,
+        totalSize: file.size,
         mimeType: file.type || 'application/pdf'
       };
       
@@ -2028,28 +2072,31 @@ function validateAndSaveReport() {
       }).withFailureHandler(onUploadFailed).getUploadUrl(fileMetadata);
     }
 
-    function uploadFileInChunks(file, uploadUrl, formData, finalFunction, startByte = 0) {
+    function uploadFileInChunks(file, uploadSessionId, formData, finalFunction, startByte = 0) {
       const totalSize = file.size;
+      if (startByte >= totalSize) return;
       const endByte = Math.min(startByte + CHUNK_SIZE - 1, totalSize - 1);
       const chunk = file.slice(startByte, endByte + 1);
       const reader = new FileReader();
       reader.onload = function() {
         const chunkBase64 = reader.result.split(',')[1];
-        const percent = Math.round(((endByte + 1) / totalSize) * 100);
-        showLoading(`กำลังอัปโหลดไฟล์... ${percent}%`);
-        
+        showLoading(`กำลังอัปโหลดไฟล์... ${Math.round(((endByte + 1) / totalSize) * 100)}%`);
         google.script.run.withSuccessHandler(function(response) {
-            if (response.statusCode === 308) {
-              uploadFileInChunks(file, uploadUrl, formData, finalFunction, endByte + 1);
-            } else if (response.statusCode === 200 || response.statusCode === 201) {
-              const fileInfo = JSON.parse(response.content);
-              saveFormDataToSheet(fileInfo.id, formData, finalFunction);
-            } else {
-              throw new Error("Upload failed: " + response.content);
-            }
-          }).withFailureHandler(onUploadFailed).uploadChunk(uploadUrl, chunkBase64, startByte, endByte, totalSize);
+          if (response.completed || response.statusCode === 200 || response.statusCode === 201) {
+            const info = response.content ? JSON.parse(response.content) : {};
+            if (info.id) { saveFormDataToSheet(info.id, formData, finalFunction); return; }
+          }
+          const next = Number(response.nextByte != null ? response.nextByte : endByte + 1);
+          uploadFileInChunks(file, uploadSessionId, formData, finalFunction, next);
+        }).withFailureHandler(function() {
+          showLoading('กำลังตรวจสอบสถานะอัปโหลด...');
+          google.script.run.withSuccessHandler(function(progress) {
+            if (progress.completed && progress.fileBindingId) { saveFormDataToSheet(progress.fileBindingId, formData, finalFunction); return; }
+            uploadFileInChunks(file, uploadSessionId, formData, finalFunction, Number(progress.nextByte || 0));
+          }).withFailureHandler(onUploadFailed).queryUploadProgress(uploadSessionId);
+        }).uploadChunk(uploadSessionId, chunkBase64, startByte, endByte, totalSize);
       };
-      reader.onerror = function(err) { onUploadFailed(new Error("File reading error: " + err.message)); };
+      reader.onerror = function(err) { onUploadFailed(new Error('ไม่สามารถอ่านไฟล์ได้: ' + (err.message || err))); };
       reader.readAsDataURL(chunk);
     }
 
