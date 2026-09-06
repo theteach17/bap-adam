@@ -7,7 +7,27 @@
 <?!= include_('SharedScripts'); ?><script>
 let submissionId='',data=null,responses={},dirty=false,saveTimer=null,saveInFlight=false,pending=false,currentItem=0;
 window.addEventListener('load',()=>google.script.url.getLocation(async loc=>{submissionId=loc.parameter.submission||'';if(!submissionId){showToast('ไม่พบรหัสรายการ');return}await loadReview()}));
-async function loadReview(){try{data=await server('openReview',submissionId);qs('title').textContent=`${data.submission.DocumentNumber} • V${data.version.VersionNo}`;qs('pdfFrame').src=data.pdfUrl||'';qs('openPdf').onclick=()=>window.open(data.pdfUrl,'_blank','noopener');responses=typeof data.review.ResponsesJSON==='string'?JSON.parse(data.review.ResponsesJSON||'{}'):(data.review.ResponsesJSON||{});qs('generalComment').value=data.review.GeneralComment||'';if(data.readOnly){qs('lockNotice').classList.remove('hidden');qs('lockNotice').textContent=`เอกสารนี้กำลังตรวจโดย ${data.lockedBy||'เจ้าหน้าที่อื่น'} คุณเปิดดูได้แบบอ่านอย่างเดียว`;if(data.canAdminTakeover)qs('takeoverBox').classList.remove('hidden');document.querySelectorAll('#checklistTab button,#checklistTab input,#checklistTab textarea').forEach(x=>x.disabled=true)}renderItems();renderStructured();renderHistory();qs('saveState').textContent=data.readOnly?'อ่านอย่างเดียว':'พร้อมบันทึก'}catch(e){showToast(e.message);qs('saveState').textContent=e.message}}
+function toDrivePreviewUrl(url) {
+  const text = String(url || '').trim();
+  if (!text) return '';
+
+  // รองรับ https://drive.google.com/file/d/FILE_ID/view
+  let match = text.match(/\/file\/d\/([^/?#]+)/);
+
+  // รองรับ URL รูปแบบ ?id=FILE_ID เผื่อมีข้อมูลเก่า
+  if (!match) {
+    match = text.match(/[?&]id=([^&#]+)/);
+  }
+
+  if (!match || !match[1]) {
+    return text;
+  }
+
+  const fileId = match[1];
+
+  return 'https://drive.google.com/file/d/' + fileId + '/preview';
+}
+async function loadReview(){try{data=await server('openReview',submissionId);qs('title').textContent=`${data.submission.DocumentNumber} • V${data.version.VersionNo}`;qs('pdfFrame').src = toDrivePreviewUrl(data.pdfUrl);qs('openPdf').onclick=()=>window.open(data.pdfUrl,'_blank','noopener');responses=typeof data.review.ResponsesJSON==='string'?JSON.parse(data.review.ResponsesJSON||'{}'):(data.review.ResponsesJSON||{});qs('generalComment').value=data.review.GeneralComment||'';if(data.readOnly){qs('lockNotice').classList.remove('hidden');qs('lockNotice').textContent=`เอกสารนี้กำลังตรวจโดย ${data.lockedBy||'เจ้าหน้าที่อื่น'} คุณเปิดดูได้แบบอ่านอย่างเดียว`;if(data.canAdminTakeover)qs('takeoverBox').classList.remove('hidden');document.querySelectorAll('#checklistTab button,#checklistTab input,#checklistTab textarea').forEach(x=>x.disabled=true)}renderItems();renderStructured();renderHistory();qs('saveState').textContent=data.readOnly?'อ่านอย่างเดียว':'พร้อมบันทึก'}catch(e){showToast(e.message);qs('saveState').textContent=e.message}}
 async function takeover(){if(!data||!data.canAdminTakeover)return;if(!confirm('ยืนยันรับช่วงการตรวจจากเจ้าหน้าที่คนปัจจุบัน? การดำเนินการนี้จะถูกบันทึก Audit'))return;try{await server('takeoverReview',data.review.ReviewId);location.reload()}catch(e){showToast(e.message)}}
 function renderItems(){const only=qs('priorOnly').checked,prev=new Set((data.previousFixItemIds||[]).map(String));let rows=(data.items||[]).filter(i=>!only||prev.has(String(i.ItemId)));qs('items').innerHTML=rows.map((i,idx)=>{const r=responses[i.ItemId]||{result:'UNREVIEWED',issueSeverity:i.DefaultSeverity||'MINOR',comment:'',pageNumber:'',quickCommentIds:[]};const q=(data.quickComments||[]).filter(x=>!i.QuickCommentGroup||x.GroupId===i.QuickCommentGroup);return `<div class="review-item ${prev.has(String(i.ItemId))?'prevfix':''}" data-item="${esc(i.ItemId)}"><div><b>${esc(i.ItemLabel)}</b>${i.Required?' <span class="status danger">บังคับ</span>':''}</div>${i.HelpText?`<div class="muted">${esc(i.HelpText)}</div>`:''}<div class="result-buttons" style="margin-top:8px">${['PASS','FIX','NA','NOTE'].map(v=>`<button class="btn ${r.result===v?'active':''}" ${data.readOnly?'disabled':''} onclick="setResult('${esc(i.ItemId)}','${v}')">${v}</button>`).join('')}</div><div class="grid" style="margin-top:8px"><div class="field"><label>หน้า</label><input inputmode="numeric" value="${esc(r.pageNumber||'')}" ${data.readOnly?'disabled':''} onchange="setField('${esc(i.ItemId)}','pageNumber',this.value)"></div><div class="field"><label>ระดับ</label><select ${data.readOnly?'disabled':''} onchange="setField('${esc(i.ItemId)}','issueSeverity',this.value)"><option ${r.issueSeverity==='MINOR'?'selected':''}>MINOR</option><option ${r.issueSeverity==='CRITICAL'?'selected':''}>CRITICAL</option></select></div></div><div class="field" style="margin-top:8px"><label>Quick Comment</label><select ${data.readOnly?'disabled':''} onchange="setQuick('${esc(i.ItemId)}',this.value)"><option value="">-- เลือก --</option>${q.map(x=>`<option value="${esc(x.QuickCommentId)}">${esc(x.Label)}</option>`).join('')}</select></div><div class="field" style="margin-top:8px"><label>ความคิดเห็น</label><textarea rows="2" ${data.readOnly?'disabled':''} oninput="setField('${esc(i.ItemId)}','comment',this.value)">${esc(r.comment||'')}</textarea></div></div>`}).join('')||'<div class="muted">ไม่มีรายการตามตัวกรอง</div>'}
 function ensure(id){if(!responses[id])responses[id]={result:'UNREVIEWED',issueSeverity:'MINOR',comment:'',pageNumber:'',quickCommentIds:[]};return responses[id]}
