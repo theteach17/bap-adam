@@ -266,20 +266,59 @@ function resolveReportValidationType_(reportName, documentNumber, selectedType, 
 }
 
 function validateDecimalTwoPlaces_(value, min, max, fieldLabel, required) {
-  var text = String(value || '').trim();
+  // Values read back from Google Sheets are Numbers, so formatting such as
+  // 4.50 is naturally returned as 4.5. Accept persisted numeric values only
+  // when they contain no more than two decimal places.
+  if (typeof value === 'number') {
+    if (!isFinite(value)) {
+      throw new Error(fieldLabel + ' ต้องเป็นตัวเลขที่ถูกต้อง');
+    }
+
+    var scaled = value * 100;
+    if (Math.abs(scaled - Math.round(scaled)) > 1e-9) {
+      throw new Error(fieldLabel + ' ต้องมีทศนิยมไม่เกิน 2 หลัก');
+    }
+
+    if (value < min || value > max) {
+      throw new Error(
+        fieldLabel + ' ต้องอยู่ระหว่าง ' +
+        min.toFixed(2) + ' ถึง ' + max.toFixed(2)
+      );
+    }
+
+    return value;
+  }
+
+  // User-entered values arrive as strings. Keep the original strict rule:
+  // the user must explicitly enter exactly two decimal places, e.g. 4.50.
+  var text = String(value == null ? '' : value).trim();
+
   if (!text) {
-    if (required) throw new Error(fieldLabel + ' จำเป็นต้องกรอก');
+    if (required) {
+      throw new Error(fieldLabel + ' จำเป็นต้องกรอก');
+    }
     return '';
   }
 
   if (!/^\d+\.\d{2}$/.test(text)) {
-    throw new Error(fieldLabel + ' ต้องเป็นเลขทศนิยม 2 หลัก เช่น 4.50');
+    throw new Error(
+      fieldLabel + ' ต้องเป็นเลขทศนิยม 2 หลัก เช่น 4.50'
+    );
   }
 
   var numberValue = Number(text);
-  if (isNaN(numberValue) || numberValue < min || numberValue > max) {
-    throw new Error(fieldLabel + ' ต้องอยู่ระหว่าง ' + min.toFixed(2) + ' ถึง ' + max.toFixed(2));
+
+  if (
+    !isFinite(numberValue) ||
+    numberValue < min ||
+    numberValue > max
+  ) {
+    throw new Error(
+      fieldLabel + ' ต้องอยู่ระหว่าง ' +
+      min.toFixed(2) + ' ถึง ' + max.toFixed(2)
+    );
   }
+
   return numberValue;
 }
 
