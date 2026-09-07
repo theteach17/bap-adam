@@ -28,13 +28,8 @@ function applyPrecheckSchemaMigration() {
 /** Public read-only installation verification for the technical owner. */
 function verifyPrecheckInstallation() {
   pcRequireTechnicalOwner_();
-
   var result = verifyPrecheckInstallation_();
-
-  console.log(
-    JSON.stringify(result, null, 2)
-  );
-
+  console.log(JSON.stringify(result, null, 2));
   return result;
 }
 
@@ -54,6 +49,49 @@ function installPrecheckTriggers() {
 function removePrecheckTriggers() {
   pcRequireTechnicalOwner_();
   return removePrecheckTriggers_();
+}
+
+/**
+ * Controlled Pilot/Manual Commit.
+ * Safety properties:
+ * - callable only by the technical owner from the Apps Script editor
+ * - does NOT enable PC_AUTO_COMMIT_ENABLED
+ * - commits only when exactly one submission is currently eligible
+ * - refuses ambiguous situations instead of guessing
+ */
+function commitSinglePendingApprovedSubmission() {
+  var email = pcRequireTechnicalOwner_();
+  var cfg = getPrecheckConfig_();
+  if (!cfg.enabled) throw new Error('PC_ENABLED is false');
+
+  var eligible = pcListObjects_(PC_CONST.SHEETS.SUBMISSIONS).filter(function(s) {
+    return [
+      PC_CONST.STATUS.APPROVED_PENDING_COMMIT,
+      PC_CONST.STATUS.APPROVED_COMMIT_FAILED
+    ].indexOf(String(s.Status)) !== -1;
+  });
+
+  if (eligible.length !== 1) {
+    throw new Error(
+      'Manual commit requires exactly 1 eligible submission; found ' +
+      eligible.length +
+      '. No commit was performed.'
+    );
+  }
+
+  var target = eligible[0];
+  console.log(JSON.stringify({
+    action: 'MANUAL_FINAL_COMMIT',
+    documentNumber: target.DocumentNumber,
+    submissionId: target.SubmissionId,
+    requestedBy: email,
+    autoCommitEnabled: cfg.autoCommitEnabled
+  }, null, 2));
+
+  var result = commitApprovedSubmission_(target.SubmissionId);
+
+  console.log(JSON.stringify(result, null, 2));
+  return result;
 }
 
 /** Bootstraps the first Pre-check administrator from the technical owner's Workspace identity. Idempotent. */

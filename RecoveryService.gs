@@ -1,7 +1,22 @@
 /** Private hourly trigger: reconciles recoverable states without blind deletion. */
 function precheckReconcileTrigger_(){
-  var cfg=getPrecheckConfig_();if(!cfg.enabled||!cfg.reconcileEnabled)return{enabled:false};
-  var result={uploads:cleanupStaleUploads_(),locks:cleanupExpiredReviewLocks_(),commits:reconcilePendingCommits_(),staleNotifications:reconcileStaleSendingNotifications_(),notifications:retryNotification_(),orphans:reconcileOrphanFiles_()};return result;
+  var cfg=getPrecheckConfig_();
+  if(!cfg.enabled||!cfg.reconcileEnabled)return{enabled:false};
+
+  // Critical safety rule:
+  // automatic final commit is allowed only when PC_AUTO_COMMIT_ENABLED=true.
+  var commitResult=cfg.autoCommitEnabled
+    ? reconcilePendingCommits_()
+    : {attempted:0,disabled:true,reason:'PC_AUTO_COMMIT_ENABLED=false'};
+
+  return{
+    uploads:cleanupStaleUploads_(),
+    locks:cleanupExpiredReviewLocks_(),
+    commits:commitResult,
+    staleNotifications:reconcileStaleSendingNotifications_(),
+    notifications:retryNotification_(),
+    orphans:reconcileOrphanFiles_()
+  };
 }
 
 /** Reconciles expired upload sessions against Drive before changing state; no file is blindly deleted. */
@@ -17,7 +32,6 @@ function cleanupStaleUploads_(){
         if(r.purpose===PC_CONST.UPLOAD_PURPOSE.PRECHECK_REPORT&&pcRecoverCompletedPrecheckUpload_(r,state.fileId)){
           recovered++;props.deleteProperty(key);return;
         }
-        // A completed legacy upload is preserved for orphan review instead of being deleted.
         props.deleteProperty(key);count++;return;
       }
       if(state.state==='ERROR'||state.state==='AMBIGUOUS'){
@@ -50,4 +64,3 @@ function reconcileOrphanFiles_(){
   while(files.hasNext()){var f=files.next();if(mapped[f.getId()])continue;if(f.getDateCreated().getTime()>cutoff)continue;f.moveTo(orphan);moved++;}
   return{moved:moved};
 }
-
