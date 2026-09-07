@@ -39,26 +39,22 @@ function pcInitializeWorkflowSheets_(db){
   });
 }
 
-/** Seeds a small requirement-derived published checklist so enforcement has a valid immutable template. */
+/** Seeds the canonical production checklist on a fresh installation. Existing installations are never overwritten. */
 function pcSeedBaselineTemplate_(){
   var cfg=getPrecheckConfig_();if(!cfg.dbId)return;
   var existing=pcListObjects_(PC_CONST.SHEETS.TEMPLATES);if(existing.length)return;
-  var templateId=pcUuid_(),now=pcNowIso_();
-  pcAppendObject_(PC_CONST.SHEETS.TEMPLATES,{TemplateId:templateId,TemplateName:'แบบตรวจรายงานผลการดำเนินกิจกรรม',TemplateVersion:1,DocumentType:PC_CONST.DOCUMENT_TYPES.REPORT_ACTIVITY,AcademicYearFrom:2569,AcademicYearTo:'',Status:PC_CONST.TEMPLATE_STATUS.PUBLISHED,CreatedAt:now,CreatedBy:'SYSTEM_SETUP',PublishedAt:now});
-  var labels=[
-    {label:'ข้อมูลสรุปที่กรอกในระบบตรงกับข้อมูลใน PDF',help:'ตรวจข้อมูลเป้าหมาย ผล งบประมาณ และค่าสถิติที่เกี่ยวข้อง',required:true,allowNA:false,group:'DATA'},
-    {label:'หมายเลขเอกสารและชื่อเอกสารตรงกับข้อมูลทะเบียน',help:'ตรวจหน้ารายงานเทียบกับข้อมูลทะเบียนของศูนย์สารสนเทศกลาง',required:true,allowNA:false,group:'MASTER'},
-    {label:'ไฟล์ PDF เปิดอ่านได้และเป็นฉบับที่ต้องการส่งตรวจ',help:'ตรวจความสมบูรณ์และลำดับหน้าของไฟล์',required:true,allowNA:false,group:'PDF'},
-    {label:'ข้อมูลเป้าหมายและผลการดำเนินงานครบถ้วนและสอดคล้องกัน',help:'ตรวจสาระเป้าหมายและผลการดำเนินงาน',required:true,allowNA:false,group:'CONTENT'},
-    {label:'ข้อมูลงบประมาณและค่าสถิติที่เกี่ยวข้องถูกต้อง',help:'เลือก N/A ได้เมื่อเอกสารประเภทนั้นไม่มีข้อมูลดังกล่าว',required:false,allowNA:true,group:'DATA'}
-  ];
-  pcAppendObjects_(PC_CONST.SHEETS.TEMPLATE_ITEMS,labels.map(function(x,i){return{ItemId:pcUuid_(),TemplateId:templateId,SectionOrder:1,SectionTitle:'การตรวจรายงาน',SubsectionOrder:1,SubsectionTitle:'',ItemOrder:i+1,ItemLabel:x.label,HelpText:x.help,Required:x.required,AllowNA:x.allowNA,DefaultSeverity:'MINOR',QuickCommentGroup:x.group,Active:true};}));
-  pcAppendObjects_(PC_CONST.SHEETS.QUICK_COMMENTS,[
-    {QuickCommentId:pcUuid_(),GroupId:'DATA',Label:'ข้อมูลไม่ตรง PDF',FullText:'กรุณาแก้ไขข้อมูลสรุปให้ตรงกับข้อมูลในไฟล์ PDF',Active:true,SortOrder:1},
-    {QuickCommentId:pcUuid_(),GroupId:'MASTER',Label:'ข้อมูลทะเบียนไม่ตรง',FullText:'กรุณาตรวจสอบหมายเลขเอกสารหรือชื่อเอกสารให้ตรงกับข้อมูลทะเบียน',Active:true,SortOrder:2},
-    {QuickCommentId:pcUuid_(),GroupId:'PDF',Label:'ไฟล์/หน้าไม่สมบูรณ์',FullText:'กรุณาตรวจสอบความครบถ้วนและลำดับหน้าของไฟล์ PDF',Active:true,SortOrder:3},
-    {QuickCommentId:pcUuid_(),GroupId:'CONTENT',Label:'ข้อมูลไม่ครบ',FullText:'กรุณาเพิ่มเติมหรือแก้ไขข้อมูลผลการดำเนินงานให้ครบถ้วน',Active:true,SortOrder:4}
-  ]);
+  var def=pcProductionChecklistDefinition_(),templateId=pcUuid_(),now=pcNowIso_();
+  pcAppendObject_(PC_CONST.SHEETS.TEMPLATES,{
+    TemplateId:templateId,TemplateName:def.templateName,TemplateVersion:1,DocumentType:PC_CONST.DOCUMENT_TYPES.REPORT_ACTIVITY,
+    AcademicYearFrom:Number(cfg.enforceFromYear||2569),AcademicYearTo:'',Status:PC_CONST.TEMPLATE_STATUS.PUBLISHED,
+    CreatedAt:now,CreatedBy:'SYSTEM_SETUP',PublishedAt:now
+  });
+  pcAppendObjects_(PC_CONST.SHEETS.TEMPLATE_ITEMS,def.items.map(function(x){
+    return{ItemId:pcUuid_(),TemplateId:templateId,SectionOrder:x.sectionOrder,SectionTitle:x.sectionTitle,SubsectionOrder:x.subsectionOrder,SubsectionTitle:x.subsectionTitle,
+      ItemOrder:x.itemOrder,ItemLabel:x.itemLabel,HelpText:x.helpText,Required:x.required,AllowNA:x.allowNA,DefaultSeverity:x.defaultSeverity,QuickCommentGroup:x.quickCommentGroup,Active:x.active};
+  }));
+  pcEnsureProductionQuickComments_();
+  pcValidatePublishedTemplate_(templateId);
   PropertiesService.getScriptProperties().setProperty('PC_DEFAULT_TEMPLATE_ID',templateId);
 }
 

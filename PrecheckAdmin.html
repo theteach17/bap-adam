@@ -1,16 +1,175 @@
-<!DOCTYPE html><html lang="th"><head><base target="_top"><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ศูนย์สารสนเทศกลาง</title><?!= include_('SharedStyles'); ?></head><body><div class="top"><div class="brand">ศูนย์สารสนเทศกลาง</div><span class="muted">จัดการแบบตรวจและสิทธิ์</span><div class="spacer"></div><button class="btn btn-secondary" onclick="nav('PrecheckOfficer')">คิวตรวจ</button><button class="btn btn-secondary" onclick="nav('Index')">หน้าหลัก</button></div><div class="container"><div id="state" class="card">กำลังโหลด...</div><div id="content" class="hidden">
-<div class="card"><h3 style="margin-top:0">แบบตรวจ</h3><div id="templates"></div></div>
-<div class="card"><h3 style="margin-top:0">เพิ่ม/แก้รายการตรวจในแบบร่าง</h3><div class="grid3"><div class="field"><label>Template ID</label><input id="tiTemplate"></div><div class="field"><label>Item ID (เว้นว่างเพื่อเพิ่ม)</label><input id="tiItem"></div><div class="field"><label>รายการตรวจ</label><input id="tiLabel"></div><div class="field"><label>Section</label><input id="tiSection" value="การตรวจรายงาน"></div><div class="field"><label>ลำดับ Section</label><input id="tiSectionOrder" value="1"></div><div class="field"><label>ลำดับรายการ</label><input id="tiOrder" value="1"></div><div class="field"><label><input id="tiRequired" type="checkbox"> Required</label></div><div class="field"><label><input id="tiNA" type="checkbox"> Allow N/A</label></div><div class="field"><label>Subsection</label><input id="tiSubsection"></div><div class="field"><label>Help text</label><input id="tiHelp"></div><div class="field"><label>Severity</label><select id="tiSeverity"><option>MINOR</option><option>CRITICAL</option></select></div><div class="field"><label>Quick Comment Group</label><input id="tiGroup" value="GENERAL"></div><div class="field"><label><input id="tiActive" type="checkbox" checked> Active</label></div></div><button class="btn btn-primary" style="margin-top:12px" onclick="saveItem()">บันทึกรายการ</button></div>
-<div class="card"><h3 style="margin-top:0">Quick Comments</h3><div id="quickList"></div><div class="grid3" style="margin-top:12px"><div class="field"><label>ID (เว้นว่างเพื่อเพิ่ม)</label><input id="qcId"></div><div class="field"><label>Group</label><input id="qcGroup" value="GENERAL"></div><div class="field"><label>Label</label><input id="qcLabel"></div><div class="field"><label>ข้อความเต็ม</label><input id="qcText"></div><div class="field"><label>ลำดับ</label><input id="qcOrder" value="1"></div><div class="field"><label><input id="qcActive" type="checkbox" checked> Active</label></div></div><button class="btn btn-primary" style="margin-top:12px" onclick="saveQuick()">บันทึก Quick Comment</button></div>
-<div class="card"><h3 style="margin-top:0">สิทธิ์เจ้าหน้าที่</h3><div id="access"></div><div class="grid3" style="margin-top:12px"><div class="field"><label>Email</label><input id="aEmail" type="email"></div><div class="field"><label>Role</label><select id="aRole"><option>PRECHECK_OFFICER</option><option>PRECHECK_ADMIN</option></select></div><div class="field"><label>ชื่อแสดงผล</label><input id="aName"></div><div class="field"><label><input id="aActive" type="checkbox" checked> Active</label></div></div><button class="btn btn-primary" style="margin-top:12px" onclick="saveAccess()">บันทึกสิทธิ์</button></div>
-</div></div><?!= include_('SharedScripts'); ?><script>
-let adminData=null;window.addEventListener('load',load);
-async function load(){try{adminData=await server('getTemplateAdminData');qs('state').classList.add('hidden');qs('content').classList.remove('hidden');render()}catch(e){qs('state').textContent=e.message;showToast(e.message)}}
-function render(){qs('templates').innerHTML=(adminData.templates||[]).map(t=>`<div class="notice" style="margin:8px 0"><b>${esc(t.TemplateName)} v${esc(t.TemplateVersion)}</b> <span class="status ${t.Status==='PUBLISHED'?'ok':''}">${esc(t.Status)}</span><div class="muted">${esc(t.TemplateId)} • ${esc(t.AcademicYearFrom||'')}–${esc(t.AcademicYearTo||'')}</div><div class="actions" style="margin-top:8px"><button class="btn btn-secondary" data-id="${esc(t.TemplateId)}" data-name="${esc(t.TemplateName)}" onclick="cloneT(this.dataset.id,this.dataset.name)">Clone</button>${t.Status==='DRAFT'?`<button class="btn btn-success" data-id="${esc(t.TemplateId)}" onclick="publishT(this.dataset.id)">Publish</button>`:''}${t.Status!=='RETIRED'?`<button class="btn btn-secondary" data-id="${esc(t.TemplateId)}" onclick="retireT(this.dataset.id)">Retire</button>`:''}</div></div>`).join('');qs('quickList').innerHTML=(adminData.quickComments||[]).map(q=>`<div>${esc(q.GroupId)} • <b>${esc(q.Label)}</b> — ${esc(q.FullText)} ${q.Active?'':'(inactive)'}</div>`).join('')||'<span class="muted">ยังไม่มีข้อมูล</span>';qs('access').innerHTML=(adminData.access||[]).map(a=>`<div>${esc(a.Email)} • ${esc(a.Role)} • ${a.Active?'Active':'Inactive'}</div>`).join('')||'<span class="muted">ยังไม่มีข้อมูล</span>'}
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <base target="_top">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>ศูนย์สารสนเทศกลาง</title>
+  <?!= include_('SharedStyles'); ?>
+  <style>
+    .template-card{border:1px solid var(--border);border-radius:12px;padding:14px;margin:10px 0;background:#fff}
+    .template-card.default{border-color:#16a34a;background:#f0fdf4}
+    .template-meta{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+    .template-items{width:100%;border-collapse:collapse;margin-top:10px;font-size:14px}
+    .template-items th,.template-items td{border-bottom:1px solid var(--border);padding:8px;text-align:left;vertical-align:top}
+    .template-items th{background:#f8fafc}
+    .prod-list{margin:8px 0 0 20px;padding:0}.prod-list li{margin:4px 0}
+    .toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+    .compact{font-size:13px}
+    @media(max-width:800px){.template-items{display:block;overflow:auto}.grid3{grid-template-columns:1fr!important}}
+  </style>
+</head>
+<body>
+<div class="top">
+  <div class="brand">ศูนย์สารสนเทศกลาง</div>
+  <span class="muted">จัดการแบบตรวจและสิทธิ์</span>
+  <div class="spacer"></div>
+  <button class="btn btn-secondary" onclick="nav('PrecheckOfficer')">คิวตรวจ</button>
+  <button class="btn btn-secondary" onclick="nav('Index')">หน้าหลัก</button>
+</div>
+<div class="container">
+  <div id="state" class="card">กำลังโหลด...</div>
+  <div id="content" class="hidden">
+    <div class="card">
+      <h3 style="margin-top:0">แบบตรวจใช้งานจริง</h3>
+      <p class="muted">ติดตั้งแบบตรวจมาตรฐาน 11 รายการตามโครงสร้างรายงานจริง ระบบจะ Publish แบบใหม่ ตั้งเป็นค่าเริ่มต้นสำหรับรายการใหม่ และ Retire แบบเก่าที่ Publish อยู่ โดยรายการที่สร้างไปแล้วจะยังใช้แบบเดิมเพื่อรักษาประวัติ</p>
+      <div id="productionStatus" class="notice"></div>
+      <div id="productionPreview"></div>
+      <button id="installProdBtn" class="btn btn-success" onclick="installProduction()">ติดตั้ง/ยืนยันแบบตรวจใช้งานจริง</button>
+    </div>
+
+    <div class="card">
+      <h3 style="margin-top:0">แบบตรวจทั้งหมด</h3>
+      <div id="templates"></div>
+    </div>
+
+    <div class="card">
+      <h3 style="margin-top:0">เพิ่ม/แก้รายการตรวจในแบบร่าง</h3>
+      <div class="grid3">
+        <div class="field"><label>แบบตรวจสถานะร่าง</label><select id="tiTemplate" onchange="renderDraftItems()"></select></div>
+        <div class="field"><label>Item ID</label><input id="tiItem" readonly placeholder="สร้างอัตโนมัติเมื่อเพิ่มใหม่"></div>
+        <div class="field"><label>รายการตรวจ</label><input id="tiLabel"></div>
+        <div class="field"><label>Section</label><input id="tiSection" value="การตรวจรายงาน"></div>
+        <div class="field"><label>ลำดับ Section</label><input id="tiSectionOrder" type="number" min="1" value="1"></div>
+        <div class="field"><label>ลำดับ Subsection</label><input id="tiSubsectionOrder" type="number" min="1" value="1"></div>
+        <div class="field"><label>Subsection</label><input id="tiSubsection"></div>
+        <div class="field"><label>ลำดับรายการ</label><input id="tiOrder" type="number" min="1" value="1"></div>
+        <div class="field"><label>Severity</label><select id="tiSeverity"><option>MINOR</option><option>CRITICAL</option></select></div>
+        <div class="field"><label>Quick Comment Group</label><input id="tiGroup" value="GENERAL"></div>
+        <div class="field"><label><input id="tiRequired" type="checkbox"> Required</label></div>
+        <div class="field"><label><input id="tiNA" type="checkbox"> Allow N/A</label></div>
+        <div class="field"><label><input id="tiActive" type="checkbox" checked> Active</label></div>
+      </div>
+      <div class="field" style="margin-top:10px"><label>Help text</label><textarea id="tiHelp" rows="2"></textarea></div>
+      <div class="toolbar" style="margin-top:12px">
+        <button class="btn btn-primary" onclick="saveItem()">บันทึกรายการ</button>
+        <button class="btn btn-secondary" onclick="clearItemForm()">ล้างฟอร์ม/เพิ่มรายการใหม่</button>
+      </div>
+      <div id="draftItems" style="margin-top:14px"></div>
+    </div>
+
+    <div class="card">
+      <h3 style="margin-top:0">Quick Comments</h3>
+      <div id="quickList"></div>
+      <div class="grid3" style="margin-top:12px">
+        <div class="field"><label>ID (เว้นว่างเพื่อเพิ่ม)</label><input id="qcId"></div>
+        <div class="field"><label>Group</label><input id="qcGroup" value="GENERAL"></div>
+        <div class="field"><label>Label</label><input id="qcLabel"></div>
+        <div class="field"><label>ข้อความเต็ม</label><input id="qcText"></div>
+        <div class="field"><label>ลำดับ</label><input id="qcOrder" value="1"></div>
+        <div class="field"><label><input id="qcActive" type="checkbox" checked> Active</label></div>
+      </div>
+      <button class="btn btn-primary" style="margin-top:12px" onclick="saveQuick()">บันทึก Quick Comment</button>
+    </div>
+
+    <div class="card">
+      <h3 style="margin-top:0">สิทธิ์เจ้าหน้าที่</h3>
+      <div id="access"></div>
+      <div class="grid3" style="margin-top:12px">
+        <div class="field"><label>Email</label><input id="aEmail" type="email"></div>
+        <div class="field"><label>Role</label><select id="aRole"><option>PRECHECK_OFFICER</option><option>PRECHECK_ADMIN</option></select></div>
+        <div class="field"><label>ชื่อแสดงผล</label><input id="aName"></div>
+        <div class="field"><label><input id="aActive" type="checkbox" checked> Active</label></div>
+      </div>
+      <button class="btn btn-primary" style="margin-top:12px" onclick="saveAccess()">บันทึกสิทธิ์</button>
+    </div>
+  </div>
+</div>
+<?!= include_('SharedScripts'); ?>
+<script>
+let adminData=null;
+function boolv(v){return v===true||String(v).toLowerCase()==='true'||String(v)==='1'}
+window.addEventListener('load',load);
+async function load(){
+  try{
+    const base=await server('getTemplateAdminData');const prod=await server('getProductionChecklistAdminData');adminData=Object.assign({},base,prod);
+    qs('state').classList.add('hidden');
+    qs('content').classList.remove('hidden');
+    render();
+  }catch(e){qs('state').textContent=e.message;showToast(e.message)}
+}
+function sortedItems(templateId){
+  return (adminData.items||[]).filter(i=>String(i.TemplateId)===String(templateId)).sort((a,b)=>Number(a.SectionOrder||0)-Number(b.SectionOrder||0)||Number(a.SubsectionOrder||0)-Number(b.SubsectionOrder||0)||Number(a.ItemOrder||0)-Number(b.ItemOrder||0));
+}
+function render(){
+  renderProduction();renderTemplates();renderTemplateSelect();renderDraftItems();
+  qs('quickList').innerHTML=(adminData.quickComments||[]).sort((a,b)=>Number(a.SortOrder||0)-Number(b.SortOrder||0)).map(q=>`<div class="compact">${esc(q.GroupId)} • <b>${esc(q.Label)}</b> — ${esc(q.FullText)} ${q.Active?'':'<span class="status">Inactive</span>'}</div>`).join('')||'<span class="muted">ยังไม่มีข้อมูล</span>';
+  qs('access').innerHTML=(adminData.access||[]).map(a=>`<div>${esc(a.Email)} • ${esc(a.Role)} • ${a.Active?'Active':'Inactive'}</div>`).join('')||'<span class="muted">ยังไม่มีข้อมูล</span>';
+}
+function renderProduction(){
+  const d=adminData.productionChecklist||{items:[]};
+  const current=(adminData.templates||[]).find(t=>String(t.TemplateId)===String(adminData.defaultTemplateId));
+  const isProd=current&&sortedItems(current.TemplateId).length===d.items.length&&d.items.every((x,idx)=>String((sortedItems(current.TemplateId)[idx]||{}).ItemLabel||'')===String(x.itemLabel));
+  qs('productionStatus').className='notice '+(isProd?'ok':'warn');
+  qs('productionStatus').innerHTML=isProd?`<b>พร้อมใช้งานจริง</b> — ${esc(current.TemplateName)} v${esc(current.TemplateVersion)} เป็นค่าเริ่มต้นแล้ว`:'<b>ยังไม่ได้ตั้งแบบตรวจใช้งานจริงเป็นค่าเริ่มต้น</b> — กดปุ่มด้านล่างเพื่อสร้าง/ยืนยันแบบมาตรฐาน';
+  qs('productionPreview').innerHTML=`<div class="prod-list">${(d.items||[]).map(x=>`<div style="margin:4px 0">${esc(x.itemLabel)}${x.allowNA?' <span class="muted">(เลือก N/A ได้)</span>':''}</div>`).join('')}</div>`;
+}
+function templateItemsTable(t){
+  const items=sortedItems(t.TemplateId);
+  if(!items.length)return '<div class="muted" style="margin-top:8px">ยังไม่มีรายการตรวจ</div>';
+  return `<details style="margin-top:8px"><summary>ดูรายการตรวจ ${items.length} รายการ</summary><table class="template-items"><thead><tr><th>ลำดับ</th><th>รายการ</th><th>หมวด</th><th>Required</th><th>N/A</th>${t.Status==='DRAFT'?'<th></th>':''}</tr></thead><tbody>${items.map(i=>`<tr><td>${esc(i.SectionOrder)}.${esc(i.SubsectionOrder)}.${esc(i.ItemOrder)}</td><td><b>${esc(i.ItemLabel)}</b>${i.HelpText?`<div class="muted compact">${esc(i.HelpText)}</div>`:''}</td><td>${esc(i.SectionTitle||'')}</td><td>${boolv(i.Required)?'✓':'-'}</td><td>${boolv(i.AllowNA)?'✓':'-'}</td>${t.Status==='DRAFT'?`<td><button class="btn btn-secondary" data-id="${esc(i.ItemId)}" onclick="editItem(this.dataset.id)">แก้ไข</button></td>`:''}</tr>`).join('')}</tbody></table></details>`;
+}
+function renderTemplates(){
+  const ts=(adminData.templates||[]).slice().sort((a,b)=>Number(b.TemplateVersion||0)-Number(a.TemplateVersion||0));
+  qs('templates').innerHTML=ts.map(t=>{
+    const isDefault=String(t.TemplateId)===String(adminData.defaultTemplateId);
+    return `<div class="template-card ${isDefault?'default':''}"><div class="template-meta"><b>${esc(t.TemplateName)} v${esc(t.TemplateVersion)}</b><span class="status ${t.Status==='PUBLISHED'?'ok':''}">${esc(t.Status)}</span>${isDefault?'<span class="status ok">ค่าเริ่มต้น</span>':''}</div><div class="muted compact">${esc(t.TemplateId)} • ปี ${esc(t.AcademicYearFrom||'')}–${esc(t.AcademicYearTo||'ต่อเนื่อง')}</div><div class="toolbar" style="margin-top:8px"><button class="btn btn-secondary" data-id="${esc(t.TemplateId)}" data-name="${esc(t.TemplateName)}" onclick="cloneT(this.dataset.id,this.dataset.name)">Clone</button>${t.Status==='DRAFT'?`<button class="btn btn-success" data-id="${esc(t.TemplateId)}" onclick="publishT(this.dataset.id)">Publish</button>`:''}${t.Status==='PUBLISHED'&&!isDefault?`<button class="btn btn-primary" data-id="${esc(t.TemplateId)}" onclick="setDefaultT(this.dataset.id)">ตั้งเป็นค่าเริ่มต้น</button>`:''}${t.Status!=='RETIRED'&&!isDefault?`<button class="btn btn-secondary" data-id="${esc(t.TemplateId)}" onclick="retireT(this.dataset.id)">Retire</button>`:''}</div>${templateItemsTable(t)}</div>`;
+  }).join('')||'<span class="muted">ยังไม่มีแบบตรวจ</span>';
+}
+function renderTemplateSelect(){
+  const sel=qs('tiTemplate'),old=sel.value;
+  const drafts=(adminData.templates||[]).filter(t=>t.Status==='DRAFT');
+  sel.innerHTML='<option value="">-- เลือกแบบร่าง --</option>'+drafts.map(t=>`<option value="${esc(t.TemplateId)}">${esc(t.TemplateName)} v${esc(t.TemplateVersion)}</option>`).join('');
+  if(drafts.some(t=>String(t.TemplateId)===String(old)))sel.value=old;
+}
+function renderDraftItems(){
+  const id=qs('tiTemplate').value;
+  if(!id){qs('draftItems').innerHTML='<span class="muted">เลือกแบบตรวจสถานะร่างเพื่อดู/แก้รายการ</span>';return}
+  const t=(adminData.templates||[]).find(x=>String(x.TemplateId)===String(id));
+  qs('draftItems').innerHTML=t?templateItemsTable(t):'';
+}
+function editItem(id){
+  const i=(adminData.items||[]).find(x=>String(x.ItemId)===String(id));if(!i)return;
+  qs('tiTemplate').value=i.TemplateId;qs('tiItem').value=i.ItemId;qs('tiLabel').value=i.ItemLabel||'';qs('tiSection').value=i.SectionTitle||'';qs('tiSectionOrder').value=i.SectionOrder||1;qs('tiSubsectionOrder').value=i.SubsectionOrder||1;qs('tiSubsection').value=i.SubsectionTitle||'';qs('tiOrder').value=i.ItemOrder||1;qs('tiHelp').value=i.HelpText||'';qs('tiRequired').checked=boolv(i.Required);qs('tiNA').checked=boolv(i.AllowNA);qs('tiSeverity').value=i.DefaultSeverity||'MINOR';qs('tiGroup').value=i.QuickCommentGroup||'GENERAL';qs('tiActive').checked=boolv(i.Active);window.scrollTo({top:qs('tiTemplate').getBoundingClientRect().top+window.scrollY-100,behavior:'smooth'});
+}
+function clearItemForm(){
+  qs('tiItem').value='';qs('tiLabel').value='';qs('tiHelp').value='';qs('tiSubsection').value='';qs('tiSectionOrder').value=1;qs('tiSubsectionOrder').value=1;qs('tiOrder').value=1;qs('tiRequired').checked=false;qs('tiNA').checked=false;qs('tiSeverity').value='MINOR';qs('tiGroup').value='GENERAL';qs('tiActive').checked=true;
+}
+async function installProduction(){
+  if(!confirm('ติดตั้งแบบตรวจใช้งานจริง 11 รายการและตั้งเป็นค่าเริ่มต้นสำหรับรายการใหม่? รายการเดิมจะยังใช้แบบตรวจเดิมเพื่อรักษาประวัติ'))return;
+  const b=qs('installProdBtn');b.disabled=true;b.textContent='กำลังติดตั้ง...';
+  try{const r=await server('installProductionChecklistTemplate');showToast(`ติดตั้งแบบตรวจใช้งานจริงแล้ว ${r.itemCount} รายการ`);await load()}catch(e){showToast(e.message)}finally{b.disabled=false;b.textContent='ติดตั้ง/ยืนยันแบบตรวจใช้งานจริง'}
+}
 async function cloneT(id,name){const n=prompt('ชื่อแบบตรวจใหม่',name+' (ฉบับใหม่)');if(!n)return;try{await server('cloneTemplate',id,n);showToast('สร้างแบบร่างใหม่แล้ว');await load()}catch(e){showToast(e.message)}}
 async function publishT(id){if(!confirm('ยืนยัน Publish แบบตรวจนี้? เมื่อถูกใช้งานแล้วต้องแก้ด้วยการ Clone เป็น Version ใหม่'))return;try{await server('publishTemplate',id);showToast('เผยแพร่แล้ว');await load()}catch(e){showToast(e.message)}}
+async function setDefaultT(id){if(!confirm('ตั้งแบบตรวจนี้เป็นค่าเริ่มต้นสำหรับรายการใหม่?'))return;try{await server('setDefaultPrecheckTemplate',id);showToast('ตั้งเป็นค่าเริ่มต้นแล้ว');await load()}catch(e){showToast(e.message)}}
 async function retireT(id){if(!confirm('ยืนยันยุติการใช้แบบตรวจนี้สำหรับรายการใหม่? รายการเดิมจะยังใช้ Template เดิม'))return;try{await server('retireTemplate',id);showToast('ยุติการใช้แบบตรวจแล้ว');await load()}catch(e){showToast(e.message)}}
-async function saveItem(){try{await server('upsertTemplateItem',qs('tiTemplate').value,{itemId:qs('tiItem').value,itemLabel:qs('tiLabel').value,sectionTitle:qs('tiSection').value,sectionOrder:qs('tiSectionOrder').value,subsectionOrder:1,subsectionTitle:qs('tiSubsection').value,itemOrder:qs('tiOrder').value,helpText:qs('tiHelp').value,required:qs('tiRequired').checked,allowNA:qs('tiNA').checked,quickCommentGroup:qs('tiGroup').value,defaultSeverity:qs('tiSeverity').value,active:qs('tiActive').checked});showToast('บันทึกรายการแล้ว');await load()}catch(e){showToast(e.message)}}
+async function saveItem(){
+  const templateId=qs('tiTemplate').value;if(!templateId){showToast('กรุณาเลือกแบบตรวจสถานะร่าง');return}
+  try{await server('upsertTemplateItem',templateId,{itemId:qs('tiItem').value,itemLabel:qs('tiLabel').value,sectionTitle:qs('tiSection').value,sectionOrder:qs('tiSectionOrder').value,subsectionOrder:qs('tiSubsectionOrder').value,subsectionTitle:qs('tiSubsection').value,itemOrder:qs('tiOrder').value,helpText:qs('tiHelp').value,required:qs('tiRequired').checked,allowNA:qs('tiNA').checked,quickCommentGroup:qs('tiGroup').value,defaultSeverity:qs('tiSeverity').value,active:qs('tiActive').checked});showToast('บันทึกรายการแล้ว');clearItemForm();await load();qs('tiTemplate').value=templateId;renderDraftItems()}catch(e){showToast(e.message)}
+}
 async function saveQuick(){try{await server('upsertQuickComment',{quickCommentId:qs('qcId').value,groupId:qs('qcGroup').value,label:qs('qcLabel').value,fullText:qs('qcText').value,active:qs('qcActive').checked,sortOrder:qs('qcOrder').value});showToast('บันทึก Quick Comment แล้ว');await load()}catch(e){showToast(e.message)}}
 async function saveAccess(){try{await server('upsertPrecheckAccess',{email:qs('aEmail').value,role:qs('aRole').value,displayName:qs('aName').value,active:qs('aActive').checked});showToast('บันทึกสิทธิ์แล้ว');await load()}catch(e){showToast(e.message)}}
-</script></body></html>
+</script>
+</body>
+</html>
