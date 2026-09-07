@@ -502,13 +502,16 @@
         <button class="nav-btn" id="adminTemplateMenu" style="display:none" onclick="goPage('PrecheckAdmin')"><i class="fas fa-list-check text-secondary"></i> จัดการแบบตรวจ</button>
       </div>
 
-      <button class="nav-btn legacy-report-flow-btn" onclick="showReportForm()">
-        <i class="fas fa-file-signature text-primary"></i> ส่งรายงานฉบับสมบูรณ์ (Workflow เดิม)
-      </button>
-      
-      <button class="nav-btn" onclick="showNonCompletedProjectForm()">
-        <i class="fas fa-exclamation-triangle text-danger"></i> แจ้งกิจกรรมที่ไม่ได้ดำเนินการ
-      </button>
+      <!-- ADMIN-only sidebar shortcuts; underlying workflows remain available through Unified Routing -->
+      <div id="adminLegacyWorkflowMenu" style="display:none">
+        <button class="nav-btn legacy-report-flow-btn" onclick="showReportForm()">
+          <i class="fas fa-file-signature text-primary"></i> ส่งรายงานฉบับสมบูรณ์ (Workflow เดิม)
+        </button>
+        
+        <button class="nav-btn" onclick="showNonCompletedProjectForm()">
+          <i class="fas fa-exclamation-triangle text-danger"></i> แจ้งกิจกรรมที่ไม่ได้ดำเนินการ
+        </button>
+      </div>
     </div>
     
     <div class="logout-section">
@@ -516,7 +519,7 @@
             <i class="fas fa-sign-out-alt me-2"></i> ออกจากระบบ
         </button>
         <div class="text-center mt-2 text-muted" style="font-size:0.7rem;">
-            v.2.1.0<br>พัฒนาโดยงานแผนงานและสารสนเทศโรงเรียน
+            v.2.0.0<br>พัฒนาโดยงานแผนงานและสารสนเทศโรงเรียน
         </div>
     </div>
   </div>
@@ -915,14 +918,9 @@
       setInterval(updateClock, 1000);
     };
 
-    let pageNavigationInFlight = false;
     function goPage(page, params = {}) {
-      if (pageNavigationInFlight) return;
-      pageNavigationInFlight = true;
-      showLoading('กำลังเปิดหน้า กรุณารอสักครู่...');
       google.script.run.withSuccessHandler(function(url){ window.open(url, '_top'); })
-        .withFailureHandler(function(error){ pageNavigationInFlight = false; hideLoading(); onUploadFailed(error); })
-        .getAppNavigationUrl(page, params);
+        .withFailureHandler(onUploadFailed).getAppNavigationUrl(page, params);
     }
 
     function loadNavigationContext() {
@@ -930,10 +928,26 @@
         pcClientConfig = ctx || pcClientConfig;
         if (ctx && ctx.chunkSizeBytes) CHUNK_SIZE = Number(ctx.chunkSizeBytes);
         const roles = (ctx && ctx.roles) || [];
-        if (roles.includes('PRECHECK_OFFICER') || roles.includes('PRECHECK_ADMIN')) document.getElementById('officerMenu').style.display = 'block';
-        if (roles.includes('PRECHECK_ADMIN')) document.getElementById('adminTemplateMenu').style.display = 'flex';
-        if (ctx && ctx.enforceReportActivity) document.querySelectorAll('.legacy-report-flow-btn').forEach(el => el.style.display = 'none');
-        if (ctx && ctx.displayName) { document.getElementById('displayUserName').textContent = ctx.displayName; document.getElementById('userAvatar').textContent = ctx.displayName.charAt(0).toUpperCase(); }
+        const isPrecheckAdmin = roles.includes('PRECHECK_ADMIN');
+
+        if (roles.includes('PRECHECK_OFFICER') || isPrecheckAdmin) {
+          document.getElementById('officerMenu').style.display = 'block';
+        }
+        if (isPrecheckAdmin) {
+          document.getElementById('adminTemplateMenu').style.display = 'flex';
+        }
+
+        // ADMIN-only visibility for the two legacy sidebar shortcuts.
+        // Hidden in HTML by default; shown only after the server context confirms PRECHECK_ADMIN.
+        const adminLegacyWorkflowMenu = document.getElementById('adminLegacyWorkflowMenu');
+        if (adminLegacyWorkflowMenu) {
+          adminLegacyWorkflowMenu.style.display = isPrecheckAdmin ? 'block' : 'none';
+        }
+
+        if (ctx && ctx.displayName) {
+          document.getElementById('displayUserName').textContent = ctx.displayName;
+          document.getElementById('userAvatar').textContent = ctx.displayName.charAt(0).toUpperCase();
+        }
       }).getNavigationContext();
     }
 
