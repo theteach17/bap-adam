@@ -1,54 +1,55 @@
---- Index.html.pre-admin-menu-change
-+++ Index.html.admin-only-layout-restored
-@@ -502,11 +502,11 @@
-         <button class="nav-btn" id="adminTemplateMenu" style="display:none" onclick="goPage('PrecheckAdmin')"><i class="fas fa-list-check text-secondary"></i> จัดการแบบตรวจ</button>
-       </div>
- 
--      <button class="nav-btn legacy-report-flow-btn" onclick="showReportForm()">
-+      <button class="nav-btn legacy-report-flow-btn" id="adminLegacyReportMenu" style="display:none" onclick="showReportForm()">
-         <i class="fas fa-file-signature text-primary"></i> ส่งรายงานฉบับสมบูรณ์ (Workflow เดิม)
-       </button>
-       
--      <button class="nav-btn" onclick="showNonCompletedProjectForm()">
-+      <button class="nav-btn" id="adminLegacyNonCompletedMenu" style="display:none" onclick="showNonCompletedProjectForm()">
-         <i class="fas fa-exclamation-triangle text-danger"></i> แจ้งกิจกรรมที่ไม่ได้ดำเนินการ
-       </button>
-     </div>
-@@ -516,7 +516,7 @@
-             <i class="fas fa-sign-out-alt me-2"></i> ออกจากระบบ
-         </button>
-         <div class="text-center mt-2 text-muted" style="font-size:0.7rem;">
--            v.2.0.0<br>พัฒนาโดยงานแผนงานและสารสนเทศโรงเรียน
-+            v.2.1.0<br>พัฒนาโดยงานแผนงานและสารสนเทศโรงเรียน
-         </div>
-     </div>
-   </div>
-@@ -925,10 +925,24 @@
-         pcClientConfig = ctx || pcClientConfig;
-         if (ctx && ctx.chunkSizeBytes) CHUNK_SIZE = Number(ctx.chunkSizeBytes);
-         const roles = (ctx && ctx.roles) || [];
--        if (roles.includes('PRECHECK_OFFICER') || roles.includes('PRECHECK_ADMIN')) document.getElementById('officerMenu').style.display = 'block';
--        if (roles.includes('PRECHECK_ADMIN')) document.getElementById('adminTemplateMenu').style.display = 'flex';
--        if (ctx && ctx.enforceReportActivity) document.querySelectorAll('.legacy-report-flow-btn').forEach(el => el.style.display = 'none');
--        if (ctx && ctx.displayName) { document.getElementById('displayUserName').textContent = ctx.displayName; document.getElementById('userAvatar').textContent = ctx.displayName.charAt(0).toUpperCase(); }
-+        const isPrecheckAdmin = roles.includes('PRECHECK_ADMIN');
-+
-+        if (roles.includes('PRECHECK_OFFICER') || isPrecheckAdmin) {
-+          document.getElementById('officerMenu').style.display = 'block';
-+        }
-+        if (isPrecheckAdmin) {
-+          document.getElementById('adminTemplateMenu').style.display = 'flex';
-+        }
-+
-+        const adminLegacyReportMenu = document.getElementById('adminLegacyReportMenu');
-+        const adminLegacyNonCompletedMenu = document.getElementById('adminLegacyNonCompletedMenu');
-+        if (adminLegacyReportMenu) adminLegacyReportMenu.style.display = isPrecheckAdmin ? 'flex' : 'none';
-+        if (adminLegacyNonCompletedMenu) adminLegacyNonCompletedMenu.style.display = isPrecheckAdmin ? 'flex' : 'none';
-+
-+        if (ctx && ctx.displayName) {
-+          document.getElementById('displayUserName').textContent = ctx.displayName;
-+          document.getElementById('userAvatar').textContent = ctx.displayName.charAt(0).toUpperCase();
-+        }
-       }).getNavigationContext();
+--- Index.before
++++ Index.after
+@@ -50,11 +50,14 @@
      }
  
+     .sidebar-header {
+-      padding: 25px 20px;
++      height: 80px;
++      padding: 10px 20px;
+       display: flex;
+       align-items: center;
+       border-bottom: 2px solid var(--soft-yellow);
+       background: linear-gradient(to right, #fff, #fffbf0);
++      box-sizing: border-box;
++      flex-shrink: 0;
+     }
+ 
+     .sidebar-header img {
+@@ -183,6 +186,8 @@
+         display: flex;
+         align-items: center;
+         gap: 15px;
++        min-width: 0;
++        flex: 1 1 auto;
+     }
+ 
+     .page-title h4 {
+@@ -191,6 +196,9 @@
+         color: #2d3436;
+         display: flex;
+         align-items: center;
++        font-size: 1.35rem;
++        line-height: 1.25;
++        white-space: nowrap;
+     }
+ 
+     /* เพิ่ม CSS ปุ่ม Hamburger */
+@@ -254,7 +262,7 @@
+     }
+ 
+     .content-wrapper {
+-      padding: 30px;
++      padding: 18px 30px 30px;
+     }
+ 
+     /* --- Table Styles --- */
+@@ -264,7 +272,7 @@
+       border: 1px solid #ffeaa7;
+       box-shadow: 0 5px 20px rgba(0, 0, 0, 0.02);
+       overflow: hidden;
+-      margin-top: 10px;
++      margin-top: 0;
+     }
+     
+     .table-responsive {

@@ -1,26 +1,37 @@
-# ADMIN-only menu — Layout Restored v2
+# Index Layout Polish — CSS-only v1
 
-แก้เฉพาะ Index.html
+## เป้าหมาย
+ปรับเฉพาะความเรียบร้อยของหน้า Index ตามภาพจริง โดยไม่เปลี่ยน Business Logic หรือ DOM
 
-## สิ่งที่เปลี่ยน
-- ปุ่มเดิม `ส่งรายงานฉบับสมบูรณ์ (Workflow เดิม)` ซ่อนโดย default และแสดงเฉพาะ PRECHECK_ADMIN
-- ปุ่มเดิม `แจ้งกิจกรรมที่ไม่ได้ดำเนินการ` ซ่อนโดย default และแสดงเฉพาะ PRECHECK_ADMIN
-- ใช้ id บนปุ่มเดิมโดยตรง
-- ไม่มี div wrapper ใหม่
-- fail-closed หากโหลด role ไม่สำเร็จ
+## จุดที่ปรับ
+1. `.sidebar-header`
+   - กำหนดความสูง 80px ให้เสมอกับ `.top-bar`
+   - ลด padding แนวตั้งเพื่อให้โลโก้/ชื่ออยู่กึ่งกลาง
+   - ไม่แก้ข้อความ โลโก้ หรือโครงสร้าง HTML
 
-## สิ่งที่ไม่ได้เปลี่ยน
-- CSS ทั้ง `<style>` เหมือนเดิม byte-for-byte
-- sidebar/sidebar-menu/main-content/content-wrapper เหมือนเดิม
-- Router / Unified Submit
-- showReportForm / showNonCompletedProjectForm
-- Pre-check submission/review/commit
-- Database / Config / Trigger / Notification
-- ตารางและ footer
+2. `.page-title`
+   - ให้ใช้พื้นที่ว่างอย่างถูกต้องโดยไม่ดัน layout ส่วนอื่น
 
-## สิทธิ์
-USER: ไม่เห็น 2 ปุ่ม
-PRECHECK_OFFICER: ไม่เห็น 2 ปุ่ม
-PRECHECK_ADMIN: เห็น 2 ปุ่ม
+3. `.page-title h4`
+   - ลดขนาดเล็กน้อยเป็น 1.35rem
+   - ไม่ตัดขึ้นบรรทัดใหม่บน Desktop
+   - ทำให้หัวหน้าดูเป็นแนวเดียวและสมดุลกับ search/profile
 
-หมายเหตุ: label version คงค่าปัจจุบันของผู้ใช้เป็น v.2.1.0
+4. `.content-wrapper`
+   - ลดช่องว่างด้านบนจาก 30px เป็น 18px
+   - คงขอบซ้าย/ขวา 30px เพื่อให้ตรงกับ padding ของ top bar
+
+5. `.content-card`
+   - เอา margin-top 10px ออก
+   - ทำให้ตารางไม่ดูลอยห่างจากหัวหน้า
+
+## การยืนยันขอบเขต
+- HTML หลัง `</style>` เหมือนเดิม byte-for-byte
+- JavaScript เหมือนเดิมทั้งหมด
+- ADMIN-only menu logic เหมือนเดิม
+- Router / Unified Submit / Pre-check / Review / Commit / Trigger / Database ไม่ถูกแก้
+- ตารางและการโหลดข้อมูลไม่ถูกแก้
+- Footer ไม่ถูกแก้
+- v.2.1.0 คงเดิม
+
+ให้วางทับเฉพาะ Index.html แล้ว Deploy New version
