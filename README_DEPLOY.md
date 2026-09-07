@@ -1,37 +1,36 @@
-# Index Layout Polish — CSS-only v1
+# Index Navigation Loading Regression Fix v1
 
-## เป้าหมาย
-ปรับเฉพาะความเรียบร้อยของหน้า Index ตามภาพจริง โดยไม่เปลี่ยน Business Logic หรือ DOM
+## ปัญหาที่แก้
+หน้า Index กดเมนูที่นำทางไปหน้าอื่นแล้วระบบทำงานเงียบ ไม่มีการแจ้ง "กำลังเปิดหน้า"
 
-## จุดที่ปรับ
-1. `.sidebar-header`
-   - กำหนดความสูง 80px ให้เสมอกับ `.top-bar`
-   - ลด padding แนวตั้งเพื่อให้โลโก้/ชื่ออยู่กึ่งกลาง
-   - ไม่แก้ข้อความ โลโก้ หรือโครงสร้าง HTML
+## Root cause
+`goPage()` ใน Index ปัจจุบันเรียก `getAppNavigationUrl()` โดยไม่มี `showLoading()`
+ทั้งที่ implementation ที่ผ่านการทดสอบก่อนหน้านี้มี:
+- `pageNavigationInFlight`
+- `showLoading('กำลังเปิดหน้า กรุณารอสักครู่...')`
+- failure handler ที่คืน lock และปิด loading
 
-2. `.page-title`
-   - ให้ใช้พื้นที่ว่างอย่างถูกต้องโดยไม่ดัน layout ส่วนอื่น
+## การแก้
+คืนเฉพาะ implementation ของ `goPage()` ที่ผ่านการทดสอบแล้ว
 
-3. `.page-title h4`
-   - ลดขนาดเล็กน้อยเป็น 1.35rem
-   - ไม่ตัดขึ้นบรรทัดใหม่บน Desktop
-   - ทำให้หัวหน้าดูเป็นแนวเดียวและสมดุลกับ search/profile
-
-4. `.content-wrapper`
-   - ลดช่องว่างด้านบนจาก 30px เป็น 18px
-   - คงขอบซ้าย/ขวา 30px เพื่อให้ตรงกับ padding ของ top bar
-
-5. `.content-card`
-   - เอา margin-top 10px ออก
-   - ทำให้ตารางไม่ดูลอยห่างจากหัวหน้า
-
-## การยืนยันขอบเขต
-- HTML หลัง `</style>` เหมือนเดิม byte-for-byte
-- JavaScript เหมือนเดิมทั้งหมด
+## ขอบเขตที่ยืนยันว่าไม่ได้เปลี่ยน
+- CSS byte-for-byte เหมือนเดิม
+- Layout Index ล่าสุดเหมือนเดิม
 - ADMIN-only menu logic เหมือนเดิม
-- Router / Unified Submit / Pre-check / Review / Commit / Trigger / Database ไม่ถูกแก้
-- ตารางและการโหลดข้อมูลไม่ถูกแก้
-- Footer ไม่ถูกแก้
-- v.2.1.0 คงเดิม
+- loadNavigationContext เหมือนเดิม
+- Router / Unified Submit เหมือนเดิม
+- Pre-check Submission / Review / Commit / Notifications เหมือนเดิม
+- Database / Settings / Triggers ไม่เกี่ยวข้องและไม่ได้แก้
+- Modal workflows ไม่ถูกแก้
 
-ให้วางทับเฉพาะ Index.html แล้ว Deploy New version
+## ผลที่คาด
+เมนูบน Index ที่ใช้ `goPage()` ได้แก่:
+- ส่งเอกสาร
+- รายการเอกสารของฉัน
+- ตรวจรายงาน Pre-check
+- จัดการแบบตรวจ (ADMIN)
+
+จะแสดง SweetAlert "กำลังเปิดหน้า กรุณารอสักครู่..." ทันทีหลังคลิก และป้องกันการกดซ้ำระหว่างรอ URL
+
+## ติดตั้ง
+วางทับเฉพาะ `Index.html` แล้ว Deploy New version

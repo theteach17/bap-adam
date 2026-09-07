@@ -923,9 +923,14 @@
       setInterval(updateClock, 1000);
     };
 
+    let pageNavigationInFlight = false;
     function goPage(page, params = {}) {
+      if (pageNavigationInFlight) return;
+      pageNavigationInFlight = true;
+      showLoading('กำลังเปิดหน้า กรุณารอสักครู่...');
       google.script.run.withSuccessHandler(function(url){ window.open(url, '_top'); })
-        .withFailureHandler(onUploadFailed).getAppNavigationUrl(page, params);
+        .withFailureHandler(function(error){ pageNavigationInFlight = false; hideLoading(); onUploadFailed(error); })
+        .getAppNavigationUrl(page, params);
     }
 
     function loadNavigationContext() {

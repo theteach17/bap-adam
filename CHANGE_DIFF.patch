@@ -1,55 +1,18 @@
---- Index.before
-+++ Index.after
-@@ -50,11 +50,14 @@
+--- Index.before-navigation-fix
++++ Index.after-navigation-fix
+@@ -923,9 +923,14 @@
+       setInterval(updateClock, 1000);
+     };
+ 
++    let pageNavigationInFlight = false;
+     function goPage(page, params = {}) {
++      if (pageNavigationInFlight) return;
++      pageNavigationInFlight = true;
++      showLoading('กำลังเปิดหน้า กรุณารอสักครู่...');
+       google.script.run.withSuccessHandler(function(url){ window.open(url, '_top'); })
+-        .withFailureHandler(onUploadFailed).getAppNavigationUrl(page, params);
++        .withFailureHandler(function(error){ pageNavigationInFlight = false; hideLoading(); onUploadFailed(error); })
++        .getAppNavigationUrl(page, params);
      }
  
-     .sidebar-header {
--      padding: 25px 20px;
-+      height: 80px;
-+      padding: 10px 20px;
-       display: flex;
-       align-items: center;
-       border-bottom: 2px solid var(--soft-yellow);
-       background: linear-gradient(to right, #fff, #fffbf0);
-+      box-sizing: border-box;
-+      flex-shrink: 0;
-     }
- 
-     .sidebar-header img {
-@@ -183,6 +186,8 @@
-         display: flex;
-         align-items: center;
-         gap: 15px;
-+        min-width: 0;
-+        flex: 1 1 auto;
-     }
- 
-     .page-title h4 {
-@@ -191,6 +196,9 @@
-         color: #2d3436;
-         display: flex;
-         align-items: center;
-+        font-size: 1.35rem;
-+        line-height: 1.25;
-+        white-space: nowrap;
-     }
- 
-     /* เพิ่ม CSS ปุ่ม Hamburger */
-@@ -254,7 +262,7 @@
-     }
- 
-     .content-wrapper {
--      padding: 30px;
-+      padding: 18px 30px 30px;
-     }
- 
-     /* --- Table Styles --- */
-@@ -264,7 +272,7 @@
-       border: 1px solid #ffeaa7;
-       box-shadow: 0 5px 20px rgba(0, 0, 0, 0.02);
-       overflow: hidden;
--      margin-top: 10px;
-+      margin-top: 0;
-     }
-     
-     .table-responsive {
+     function loadNavigationContext() {
