@@ -11,7 +11,9 @@ function showToast(message,type='info',duration=4500){const old=qs('globalToast'
 function showSuccess(message,duration=5000){showToast(message,'success',duration)}
 function showError(message,duration=6000){showToast(message,'error',duration)}
 function setSaveState(elOrId,message,state){const el=typeof elOrId==='string'?qs(elOrId):elOrId;if(!el)return;el.textContent=message||'';el.className='save-state '+(state||'')}
-async function nav(page,params={}){if(__pcNavBusy)return;__pcNavBusy=true;try{const url=await server('getAppNavigationUrl',page,params);window.open(url,'_top')}catch(e){__pcNavBusy=false;showError(e.message)}}
+function __pcReleaseNavLock(message){__pcNavBusy=false;const el=qs('globalBusy');if(el)el.classList.add('hidden');if(message)showToast(message,'info',5500)}
+function __pcNavigateTop(url){const a=document.createElement('a');a.href=url;a.target='_top';a.rel='noopener';a.style.display='none';document.body.appendChild(a);a.click();setTimeout(()=>{if(a.parentNode)a.remove()},1000)}
+async function nav(page,params={},options={}){if(__pcNavBusy)return false;__pcNavBusy=true;try{const url=await server('getAppNavigationUrl',page,params);__pcShowBusy(options.label||'กำลังเปิดหน้า...');__pcNavigateTop(url);setTimeout(()=>{if(__pcNavBusy)__pcReleaseNavLock(options.fallbackMessage||'หากหน้าไม่เปลี่ยนอัตโนมัติ กรุณากดปุ่มนำทางอีกครั้ง')},3500);return true}catch(e){__pcReleaseNavLock();showError(e.message);return false}}
 function statusClass(s){return /COMMITTED|APPROVED$|PASS/.test(s)?'ok':/REVISION|FAILED|FIX/.test(s)?'danger':/WAITING|UPLOADING|IN_REVIEW|PENDING/.test(s)?'warn':''}
 function thDate(v){if(!v)return'-';try{return new Date(v).toLocaleString('th-TH',{dateStyle:'medium',timeStyle:'short'})}catch(e){return v}}
 </script>

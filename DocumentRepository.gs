@@ -97,6 +97,26 @@ function lookupDocument(documentNumber) {
     var principal = getCurrentPrincipal_();
     var document = pcMasterDocument_(documentNumber, false);
     if (!document) return { success: false, document: null, workflow: 'BLOCKED', status: 'NOT_FOUND', allowedAction: 'NONE', message: 'ไม่พบหมายเลขเอกสารนี้ในศูนย์สารสนเทศกลาง' };
+
+    // Self-healing cache: an UNKNOWN cached classification is a blocking state.
+    // Re-read the master once without cache so a direct ReportNo correction becomes
+    // usable immediately instead of forcing the user to wait for the five-minute TTL.
+    if (document.documentType === PC_CONST.DOCUMENT_TYPES.UNKNOWN) {
+      var cachedUnknown = document;
+      var freshDocument = pcMasterDocument_(document.documentNumber, true);
+      if (freshDocument) {
+        document = freshDocument;
+        if (document.documentType !== PC_CONST.DOCUMENT_TYPES.UNKNOWN) {
+          pcAudit_('LOOKUP_CACHE_SELF_HEALED', {}, principal, {
+            documentNumber: document.documentNumber,
+            previousDocumentName: cachedUnknown.documentName,
+            currentDocumentName: document.documentName,
+            currentDocumentType: document.documentType
+          });
+        }
+      }
+    }
+
     if (document.documentType === PC_CONST.DOCUMENT_TYPES.UNKNOWN) {
       pcAudit_('LOOKUP_BLOCKED_UNKNOWN', {}, principal, { documentNumber: document.documentNumber });
       return { success: true, document: document, workflow: 'BLOCKED', status: 'UNKNOWN_DOCUMENT_TYPE', allowedAction: 'NONE', message: 'ชื่อเอกสารไม่อยู่ในรูปแบบที่ระบบรองรับ กรุณาติดต่อผู้ดูแลระบบ' };

@@ -1,11 +1,18 @@
-# Deploy this package in one pass
+# Navigation + Cache Hardening v2
 
-1. Upload/replace every file in this package on GitHub branch `commit-gs-v2`.
-2. Pull the branch into the Apps Script project.
-3. Deploy the existing Web App as **New version** (keep the same deployment URL/settings).
-4. In Apps Script editor run `verifyPrecheckInstallation()` once. Expected: `failedCount = 0` and `autoCommitEnabled = false`.
-5. Refresh the Web App and perform the combined smoke check described in BACKLOG_STATUS.md.
+Replace these four files together:
+- SharedScripts.html
+- SubmitDocument.html
+- PrecheckReview.html
+- DocumentRepository.gs
 
-`sendPendingPrecheckNotificationsNow()` is included for future Manual Pilot/support cases only. Do **not** run it for `บง 011/2569`; its FINAL_SUCCESS email has already been delivered by the existing queue worker.
+Then:
+1. Push to branch commit-gs-v2.
+2. Pull into Apps Script.
+3. Deploy the same Web App as a New version.
+4. Run verifyPrecheckInstallation().
+5. Continue the existing บง 035/2569 revision test as V2.
 
-Do not enable `PC_ENFORCE_REPORT_ACTIVITY` or `PC_AUTO_COMMIT_ENABLED` yet. Enable enforcement only after the UX smoke check passes. Auto Commit is a later, separate activation decision.
+No schema migration is required.
+Do not run setup/migration again.
+Do not use manual commit for the บง 035/2569 Auto Commit Trigger Gate.
