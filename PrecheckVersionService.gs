@@ -20,9 +20,8 @@ function pcEnsureDraftVersion_(submission, document, principal) {
   }, 0) + 1;
 
   /*
-   * Revision V2+ must start from the latest submitted version so the user
-   * edits only what needs correction instead of re-entering the entire report.
-   *
+   * Revision V2+ starts from the latest submitted version so the user edits
+   * only what needs correction instead of re-entering the entire report.
    * CurrentVersion deliberately remains unchanged until the new version is
    * successfully submitted for review.
    */
@@ -40,8 +39,6 @@ function pcEnsureDraftVersion_(submission, document, principal) {
     SubmissionId: submission.SubmissionId,
     VersionNo: nextNo,
     VersionStatus: PC_CONST.VERSION_STATUS.DRAFT,
-
-    // A revision must upload its own PDF.
     FileId: '',
     FileUrl: '',
     OriginalFileName: '',
@@ -51,40 +48,27 @@ function pcEnsureDraftVersion_(submission, document, principal) {
     UploadedAt: '',
     UploadedByUsername: '',
     UploadedByEmail: '',
-
-    // Revision note describes only this new version.
     ChangeNote: '',
-
-    // Carry forward structured report data from the current version.
     QuantitativeTarget: previousVersion ? previousVersion.QuantitativeTarget : '',
     QuantitativeResult: previousVersion ? previousVersion.QuantitativeResult : '',
     QualitativeTarget: previousVersion ? previousVersion.QualitativeTarget : '',
     QualitativeResult: previousVersion ? previousVersion.QualitativeResult : '',
     ExpectedTarget: previousVersion ? previousVersion.ExpectedTarget : '',
-    ExpectedAchievementResult: previousVersion
-      ? previousVersion.ExpectedAchievementResult
-      : '',
-
+    ExpectedAchievementResult: previousVersion ? previousVersion.ExpectedAchievementResult : '',
     ManagementXbar: previousVersion ? previousVersion.ManagementXbar : '',
     ManagementSD: previousVersion ? previousVersion.ManagementSD : '',
     SatisfactionXbar: previousVersion ? previousVersion.SatisfactionXbar : '',
     SatisfactionSD: previousVersion ? previousVersion.SatisfactionSD : '',
     AllocatedBudget: previousVersion ? previousVersion.AllocatedBudget : '',
     ActualBudget: previousVersion ? previousVersion.ActualBudget : '',
-
-    // Master-derived metadata remains server authoritative.
     ActivityNameSnapshot: document.activityName || '',
     ProjectSnapshot: document.project || '',
-    ReportValidationType:
-      document.reportValidationTypeLabel ||
-      document.reportValidationType ||
-      '',
+    ReportValidationType: document.reportValidationTypeLabel || document.reportValidationType || '',
 
-    // Preserve an existing internal value, but it remains non-authoritative
-    // from the browser/UI.
+    // Internal compatibility field. It may be carried forward but is never
+    // accepted from browser draft payloads.
     PRIndicator: previousVersion ? previousVersion.PRIndicator || '' : '',
 
-    // Officer-correction provenance belongs to the version where it occurred.
     DataCorrectedByOfficer: false,
     DataCorrectedAt: '',
     DataCorrectedByEmail: ''
@@ -117,7 +101,9 @@ function pcPatchDraftFields_(version, payload, document, principal) {
   if (has('satisfactionSD')) patch.SatisfactionSD = validateDecimalTwoPlaces_(payload.satisfactionSD, 0.01, 1.00, 'ค่า SD ความพึงพอใจ', false);
   if (has('allocatedBudget')) patch.AllocatedBudget = pcNumberOrBlank_(payload.allocatedBudget, 'งบประมาณที่ได้รับจัดสรร', 0);
   if (has('actualBudget')) patch.ActualBudget = pcNumberOrBlank_(payload.actualBudget, 'งบประมาณที่ใช้จริง', 0);
-  if (has('prIndicator')) patch.PRIndicator = String(payload.prIndicator || '').trim();
+
+  // PRIndicator is deliberately ignored here. It is an internal/database
+  // concern and the browser is never authoritative for this field.
   return pcPatchObject_(PC_CONST.SHEETS.VERSIONS, version._rowNumber, patch);
 }
 

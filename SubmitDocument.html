@@ -5,6 +5,7 @@
   <div id="metaCard" class="card hidden"><h3 style="margin-top:0">ตรวจสอบข้อมูลทะเบียน</h3><div id="meta" class="grid3"></div><div id="routeNotice" class="notice" style="margin:14px 0"></div><div class="actions"><button id="confirmBtn" class="btn btn-success" onclick="confirmDocument()">ข้อมูลถูกต้อง ดำเนินการต่อ</button><button class="btn btn-secondary" onclick="resetLookup()">เปลี่ยนหมายเลข</button></div></div>
   <div id="fixCard" class="card hidden"><h3 style="margin-top:0">รายการที่ต้องแก้ไขจากรอบก่อน</h3><div id="fixList"></div></div>
   <div id="formCard" class="card hidden"><div class="actions" style="justify-content:space-between"><h3 style="margin:0">ข้อมูลรายงานที่ระบบยังไม่มี</h3><span id="saveState" class="save-state">ยังไม่มีการแก้ไข</span></div>
+    <div id="versionBanner" class="version-banner hidden"></div>
     <div class="grid" style="margin-top:15px">
       <div class="field"><label>เป้าหมายเชิงปริมาณ</label><textarea data-field="quantitativeTarget" rows="3"></textarea></div>
       <div class="field"><label>ผลการดำเนินการเชิงปริมาณ</label><textarea data-field="quantitativeResult" rows="3"></textarea></div>
@@ -18,7 +19,6 @@
       <div class="field"><label>ค่า SD ความพึงพอใจ</label><input data-field="satisfactionSD" inputmode="decimal"></div>
       <div class="field"><label>งบประมาณที่ได้รับจัดสรร</label><input data-field="allocatedBudget" inputmode="decimal"></div>
       <div class="field"><label>งบประมาณที่ใช้จริง</label><input data-field="actualBudget" inputmode="decimal"></div>
-      <div class="field"><label>PR Indicator (ถ้ามี)</label><input data-field="prIndicator"></div>
       <div class="field"><label>หมายเหตุการแก้ไขฉบับนี้</label><textarea data-field="changeNote" rows="2"></textarea></div>
     </div>
     <div class="actions" style="margin-top:14px"><button class="btn btn-secondary" id="saveBtn" onclick="flushDraft(true)">บันทึกร่าง</button></div>
@@ -34,54 +34,19 @@ window.addEventListener('load',async()=>{try{clientCfg=await server('getPrecheck
 async function lookup(){const btn=qs('lookupBtn');btn.disabled=true;qs('lookupState').innerHTML='<span class="loading"><span class="spinner"></span>กำลังค้นหา...</span>';try{lookupResult=await server('lookupDocument',qs('docNo').value);if(!lookupResult.success){qs('lookupState').textContent=lookupResult.message||'ไม่พบข้อมูล';qs('metaCard').classList.add('hidden');return}qs('docNo').value=lookupResult.document.documentNumber;renderMeta();qs('lookupState').textContent='พบข้อมูลทะเบียนแล้ว';qs('metaCard').classList.remove('hidden')}catch(e){qs('lookupState').textContent=e.message;showToast(e.message)}finally{btn.disabled=false}}
 function documentTypeLabel(v){return {REPORT_ACTIVITY:'รายงานผลการดำเนินกิจกรรม',NON_COMPLETED_MEMO:'บันทึกข้อความชี้แจงไม่ได้ดำเนินกิจกรรม',OTHER_DOCUMENT:'เอกสารอื่น',UNKNOWN:'ไม่ทราบประเภท'}[v]||'ไม่ทราบประเภท'}
 function renderMeta(){const d=lookupResult.document;const fields=[['หมายเลขเอกสาร',d.documentNumber],['ประเภทเอกสาร',documentTypeLabel(d.documentType)],['ชื่อเอกสาร',d.documentName],['กลุ่มบริหาร',d.adminGroup],['กลุ่มงาน',d.workGroup],['ผู้รับผิดชอบ',d.responsiblePerson],['Email',d.ownerEmail],['โครงการ',d.project],['รหัสกิจกรรม',d.activityCode],['ชื่อกิจกรรม',d.activityName]];qs('meta').innerHTML=fields.map(([k,v])=>`<div><div class="muted" style="font-size:.82rem">${esc(k)}</div><b>${esc(v||'-')}</b></div>`).join('');let msg='';if(lookupResult.workflow==='PRECHECK')msg='รายงานผลการดำเนินกิจกรรมนี้จะเข้าสู่ขั้นตอน Pre-check ก่อนบันทึกฉบับสมบูรณ์';else if(lookupResult.workflow==='NON_COMPLETED_MEMO')msg='ระบบจะใช้ Workflow บันทึกข้อความเดิม';else if(lookupResult.workflow==='OTHER_DOCUMENT')msg='ระบบจะใช้ Workflow เอกสารอื่นเดิม';else if(lookupResult.workflow==='FINAL')msg='เอกสารนี้ได้รับการบันทึกเป็นเอกสารฉบับสมบูรณ์แล้ว';else msg='ระบบจะใช้ Workflow เดิมตาม Feature Flag ปัจจุบัน';qs('routeNotice').textContent=msg;qs('confirmBtn').disabled=lookupResult.allowedAction==='NONE'||lookupResult.workflow==='FINAL'}
-async function confirmDocument(){const d=lookupResult.document;if(lookupResult.workflow==='NON_COMPLETED_MEMO'){return nav('Index',{workflow:'NON_COMPLETED_MEMO',document:d.documentNumber})}if(lookupResult.workflow==='OTHER_DOCUMENT'){return nav('Index',{workflow:'OTHER_DOCUMENT',document:d.documentNumber})}if(lookupResult.workflow!=='PRECHECK'){return nav('Index',{workflow:'LEGACY_REPORT',document:d.documentNumber})}qs('confirmBtn').disabled=true;try{draft=await server('saveSubmissionDraft',{documentNumber:d.documentNumber});populateDraft(draft.draftData||{});qs('formCard').classList.remove('hidden');renderUploadedFileState();bindAutosave();const detail=await server('getMyDocumentDetail',draft.submissionId,false);renderFixes(detail.responses||[]);window.scrollTo({top:qs('formCard').offsetTop-70,behavior:'smooth'});qs('saveState').textContent='ร่างพร้อมแก้ไข'}catch(e){showToast(e.message);qs('confirmBtn').disabled=false}}
-const TWO_DECIMAL_FIELDS = new Set([
-  'managementXbar',
-  'managementSD',
-  'satisfactionXbar',
-  'satisfactionSD'
-]);
-
-function formatPersistedDecimal(value) {
-  if (value === undefined || value === null || value === '') {
-    return '';
-  }
-
-  const numberValue = Number(value);
-
-  if (!Number.isFinite(numberValue)) {
-    return String(value);
-  }
-
-  return numberValue.toFixed(2);
-}
-
-function populateDraft(data) {
-  document.querySelectorAll('[data-field]').forEach(el => {
-    const fieldName = el.dataset.field;
-    const value = data[fieldName];
-
-    if (value === undefined || value === null) {
-      return;
-    }
-
-    if (TWO_DECIMAL_FIELDS.has(fieldName)) {
-      el.value = formatPersistedDecimal(value);
-    } else {
-      el.value = value;
-    }
-  });
-
-  dirty = false;
-}
+async function confirmDocument(){const d=lookupResult.document;if(lookupResult.workflow==='NON_COMPLETED_MEMO'){return nav('Index',{workflow:'NON_COMPLETED_MEMO',document:d.documentNumber})}if(lookupResult.workflow==='OTHER_DOCUMENT'){return nav('Index',{workflow:'OTHER_DOCUMENT',document:d.documentNumber})}if(lookupResult.workflow!=='PRECHECK'){return nav('Index',{workflow:'LEGACY_REPORT',document:d.documentNumber})}qs('confirmBtn').disabled=true;try{draft=await server('saveSubmissionDraft',{documentNumber:d.documentNumber});populateDraft(draft.draftData||{});renderVersionBanner();qs('formCard').classList.remove('hidden');renderUploadedFileState();bindAutosave();const detail=await server('getMyDocumentDetail',draft.submissionId,false);renderFixes(detail.responses||[]);window.scrollTo({top:qs('formCard').offsetTop-70,behavior:'smooth'});setSaveState('saveState','ร่างพร้อมแก้ไข','saved')}catch(e){showError(e.message);qs('confirmBtn').disabled=false}}
+const TWO_DECIMAL_FIELDS=new Set(['managementXbar','managementSD','satisfactionXbar','satisfactionSD']);
+function formatPersistedDecimal(value){if(value===undefined||value===null||value==='')return'';const n=Number(value);return Number.isFinite(n)?n.toFixed(2):String(value)}
+function populateDraft(data){document.querySelectorAll('[data-field]').forEach(el=>{const field=el.dataset.field,v=data[field];if(v===undefined||v===null)return;el.value=TWO_DECIMAL_FIELDS.has(field)?formatPersistedDecimal(v):v});dirty=false}
+function renderVersionBanner(){if(!draft)return;const n=Number(draft.versionNo||1),box=qs('versionBanner');box.classList.remove('hidden');box.innerHTML=n>1?`<strong>ฉบับแก้ไข V${n}</strong><span class="muted">แก้ไขต่อจาก V${n-1} • ข้อมูลเดิมถูกนำมาเป็นค่าเริ่มต้น และต้องอัปโหลด PDF ฉบับแก้ไขใหม่</span>`:`<strong>V1 — ฉบับแรก</strong><span class="muted">ร่างรายงานก่อนส่งเข้าสู่การตรวจ</span>`}
 function bindAutosave(){document.querySelectorAll('[data-field]').forEach(el=>{if(el.dataset.bound)return;el.dataset.bound='1';el.addEventListener('input',queueSave);el.addEventListener('change',queueSave)})}
 function renderUploadedFileState(){if(!draft)return;const input=qs('pdf');if(draft.hasUploadedFile){qs('uploadBox').classList.remove('hidden');qs('bar').style.width='100%';qs('uploadText').textContent='มีไฟล์ PDF ที่อัปโหลดแล้ว'+(draft.uploadedFileName?' — '+draft.uploadedFileName:'')+' • สามารถส่งตรวจต่อได้โดยไม่อัปโหลดซ้ำ';input.disabled=true;qs('submitBtn').textContent='ส่งรายงานเพื่อตรวจ'}else{input.disabled=false;qs('submitBtn').textContent='อัปโหลดและส่งตรวจ'}}
 function collect(){const p={documentNumber:lookupResult.document.documentNumber};document.querySelectorAll('[data-field]').forEach(el=>p[el.dataset.field]=el.value);return p}
-function queueSave(){dirty=true;qs('saveState').textContent='มีการแก้ไขที่ยังไม่บันทึก';clearTimeout(saveTimer);saveTimer=setTimeout(()=>flushDraft(false),5000)}
-async function flushDraft(manual){if(saveInFlight){pendingSave=true;return draft}if(!dirty&&!manual)return draft;saveInFlight=true;dirty=false;qs('saveState').innerHTML='<span class="loading"><span class="spinner"></span>กำลังบันทึกร่าง...</span>';try{draft=await server('saveSubmissionDraft',collect());qs('saveState').textContent='บันทึกแล้ว '+new Date().toLocaleTimeString('th-TH');return draft}catch(e){dirty=true;qs('saveState').textContent='บันทึกไม่สำเร็จ';showToast(e.message);throw e}finally{saveInFlight=false;if(pendingSave){pendingSave=false;setTimeout(()=>flushDraft(false),0)}}}
+function queueSave(){dirty=true;setSaveState('saveState','มีการแก้ไขที่ยังไม่บันทึก','dirty');clearTimeout(saveTimer);saveTimer=setTimeout(()=>flushDraft(false),5000)}
+async function flushDraft(manual){if(saveInFlight){pendingSave=true;return draft}if(!dirty&&!manual)return draft;saveInFlight=true;dirty=false;setSaveState('saveState','กำลังบันทึกร่าง...','saving');try{draft=await server('saveSubmissionDraft',collect());renderVersionBanner();setSaveState('saveState','บันทึกแล้ว '+new Date().toLocaleTimeString('th-TH'),'saved');if(manual)showSuccess('บันทึกร่างเรียบร้อยแล้ว');return draft}catch(e){dirty=true;setSaveState('saveState','บันทึกไม่สำเร็จ','error');showError(e.message);throw e}finally{saveInFlight=false;if(pendingSave){pendingSave=false;setTimeout(()=>flushDraft(false),0)}}}
 function renderFixes(rows){if(!rows.length){qs('fixCard').classList.add('hidden');return}qs('fixCard').classList.remove('hidden');qs('fixList').innerHTML=rows.map(r=>{const notes=[r.Comment,...(r.QuickCommentTexts||[])].filter(Boolean);return `<div class="fix-item"><b>${r.PageNumber?'หน้า '+esc(r.PageNumber)+' — ':''}${esc(r.ItemLabel||r.ItemId)}</b><div>${notes.length?notes.map(esc).join('<br>'):'กรุณาตรวจสอบตามผลการตรวจ'}</div></div>`}).join('')}
-async function uploadAndSubmit(){const btn=qs('submitBtn'),file=qs('pdf').files[0];if(!draft){showToast('กรุณาตรวจสอบข้อมูลเอกสารก่อน');return}if(!draft.hasUploadedFile&&!file){showToast('กรุณาเลือกไฟล์ PDF');return}if(file&&(!/\.pdf$/i.test(file.name)||file.type!=='application/pdf')){showToast('รองรับเฉพาะไฟล์ PDF');return}if(file&&clientCfg.maxFileMb&&file.size>clientCfg.maxFileMb*1024*1024){showToast(`ไฟล์มีขนาดเกิน ${clientCfg.maxFileMb} MB`);return}btn.disabled=true;qs('uploadBox').classList.remove('hidden');try{draft=await flushDraft(true)||draft;if(!draft.hasUploadedFile){const started=await server('beginChunkUpload',{documentNumber:lookupResult.document.documentNumber,submissionId:draft.submissionId,versionId:draft.versionId,fileName:file.name,mimeType:file.type,totalSize:file.size,purpose:'PRECHECK_REPORT'});if(started.resumed&&started.nextByte>0){qs('uploadText').textContent=`ดำเนินการอัปโหลดต่อจาก ${Math.round(started.nextByte*100/file.size)}%`;qs('bar').style.width=(Math.round(started.nextByte*100/file.size))+'%'}await uploadChunks(file,started.uploadSessionId,started.chunkSize,Number(started.nextByte||0));qs('uploadText').textContent='กำลังตรวจสอบไฟล์...';await server('finalizeUpload',started.uploadSessionId);draft.hasUploadedFile=true;draft.uploadedFileName=file.name;renderUploadedFileState()}qs('uploadText').textContent='กำลังส่งตรวจ...';await server('submitPrecheck',draft.submissionId,draft.versionId);qs('bar').style.width='100%';qs('uploadText').textContent='ส่งตรวจเรียบร้อย';showToast('ส่งรายงานเข้าสู่การตรวจเรียบร้อยแล้ว');setTimeout(()=>nav('PrecheckDetail',{submission:draft.submissionId}),800)}catch(e){showToast(e.message);btn.disabled=false}}
+async function uploadAndSubmit(){const btn=qs('submitBtn'),file=qs('pdf').files[0];if(!draft){showError('กรุณาตรวจสอบข้อมูลเอกสารก่อน');return}if(!draft.hasUploadedFile&&!file){showError('กรุณาเลือกไฟล์ PDF');return}if(file&&(!/\.pdf$/i.test(file.name)||file.type!=='application/pdf')){showError('รองรับเฉพาะไฟล์ PDF');return}if(file&&clientCfg.maxFileMb&&file.size>clientCfg.maxFileMb*1024*1024){showError(`ไฟล์มีขนาดเกิน ${clientCfg.maxFileMb} MB`);return}btn.disabled=true;qs('uploadBox').classList.remove('hidden');try{draft=await flushDraft(true)||draft;if(!draft.hasUploadedFile){const started=await server('beginChunkUpload',{documentNumber:lookupResult.document.documentNumber,submissionId:draft.submissionId,versionId:draft.versionId,fileName:file.name,mimeType:file.type,totalSize:file.size,purpose:'PRECHECK_REPORT'});if(started.resumed&&started.nextByte>0){qs('uploadText').textContent=`ดำเนินการอัปโหลดต่อจาก ${Math.round(started.nextByte*100/file.size)}%`;qs('bar').style.width=(Math.round(started.nextByte*100/file.size))+'%'}await uploadChunks(file,started.uploadSessionId,started.chunkSize,Number(started.nextByte||0));qs('uploadText').textContent='กำลังตรวจสอบไฟล์...';await server('finalizeUpload',started.uploadSessionId);draft.hasUploadedFile=true;draft.uploadedFileName=file.name;renderUploadedFileState()}qs('uploadText').textContent='กำลังส่งตรวจ...';await server('submitPrecheck',draft.submissionId,draft.versionId);qs('bar').style.width='100%';qs('uploadText').innerHTML='<b style="color:var(--ok)">ส่งตรวจเรียบร้อย — กำลังเปิดหน้ารายละเอียด...</b>';document.querySelectorAll('#formCard input,#formCard textarea,#formCard select,#formCard button').forEach(el=>el.disabled=true);btn.textContent='ส่งตรวจเรียบร้อย';showSuccess('ส่งรายงานเข้าสู่การตรวจเรียบร้อยแล้ว กำลังเปิดหน้ารายละเอียด...',6000);setTimeout(()=>nav('PrecheckDetail',{submission:draft.submissionId}),1400)}catch(e){showError(e.message);btn.disabled=false}}
 async function uploadChunks(file,sessionId,chunkSize,start){if(start>=file.size)return;const end=Math.min(start+Number(chunkSize)-1,file.size-1),blob=file.slice(start,end+1),base64=await readBase64(blob);try{const r=await server('uploadChunk',sessionId,base64,start,end,file.size);qs('bar').style.width=(r.percent||0)+'%';qs('uploadText').textContent=`กำลังอัปโหลด... ${r.percent||0}%`;if(r.completed)return;return uploadChunks(file,sessionId,chunkSize,Number(r.nextByte))}catch(e){qs('uploadText').textContent='กำลังตรวจสอบตำแหน่งล่าสุด...';const p=await server('queryUploadProgress',sessionId);if(p.completed)return;return uploadChunks(file,sessionId,chunkSize,Number(p.nextByte||0))}}
 function readBase64(blob){return new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(r.result.split(',')[1]);r.onerror=()=>reject(new Error('ไม่สามารถอ่านไฟล์ได้'));r.readAsDataURL(blob)})}
-function resetLookup(){lookupResult=null;draft=null;qs('metaCard').classList.add('hidden');qs('formCard').classList.add('hidden');qs('fixCard').classList.add('hidden');qs('docNo').focus()}
+function resetLookup(){lookupResult=null;draft=null;qs('metaCard').classList.add('hidden');qs('formCard').classList.add('hidden');qs('fixCard').classList.add('hidden');qs('versionBanner').classList.add('hidden');setSaveState('saveState','ยังไม่มีการแก้ไข','');qs('docNo').focus()}
 </script></body></html>

@@ -90,6 +90,12 @@ function commitSinglePendingApprovedSubmission() {
 
   var result = commitApprovedSubmission_(target.SubmissionId);
 
+  // Manual pilot commit happens outside the hourly reconcile worker, so dispatch
+  // due notification immediately after the business transaction has committed.
+  // Mail failure never rolls back the completed commit; the queue keeps retry state.
+  try { result.notificationDispatch = retryNotification_(); }
+  catch (mailError) { result.notificationDispatch = { processed:0, attempted:0, error:String(mailError && mailError.message || mailError) }; }
+
   console.log(JSON.stringify(result, null, 2));
   return result;
 }
@@ -124,4 +130,12 @@ function bootstrapPrecheckAdmin() {
 function runPrecheckBackupNow() {
   pcRequireTechnicalOwner_();
   return createPrecheckDailyBackup_();
+}
+
+/** Technical-owner manual notification dispatcher for Pilot/support use. */
+function sendPendingPrecheckNotificationsNow() {
+  pcRequireTechnicalOwner_();
+  var result = retryNotification_();
+  console.log(JSON.stringify(result, null, 2));
+  return result;
 }

@@ -1,9 +1,17 @@
 <script>
-function server(name,...args){return new Promise((resolve,reject)=>google.script.run.withSuccessHandler(resolve).withFailureHandler(e=>reject(new Error(e&&e.message?e.message:String(e))))[name](...args));}
+let __pcBusyCount=0,__pcBusyTimer=null,__pcNavBusy=false;
+function __pcBusyLabel(name){const m={getAppNavigationUrl:'กำลังเปิดหน้า...',openReview:'กำลังเปิดเอกสาร...',getOfficerDashboard:'กำลังโหลดคิว...',getMyDocuments:'กำลังโหลดรายการ...',getMyDocumentDetail:'กำลังโหลดรายละเอียด...',lookupDocument:'กำลังค้นหาเอกสาร...',saveSubmissionDraft:'กำลังบันทึกร่าง...',saveReviewDraft:'กำลังบันทึกผลตรวจ...',completeReview:'กำลังสรุปผลการตรวจ...',beginChunkUpload:'กำลังเตรียมอัปโหลด...',finalizeUpload:'กำลังตรวจสอบไฟล์...',submitPrecheck:'กำลังส่งรายงาน...'};return m[name]||'กำลังดำเนินการ...'}
+function __pcShowBusy(label){let el=qs('globalBusy');if(!el){el=document.createElement('div');el.id='globalBusy';el.className='global-busy hidden';el.innerHTML='<span class="spinner"></span><span id="globalBusyText"></span>';document.body.appendChild(el)}const t=qs('globalBusyText');if(t)t.textContent=label||'กำลังดำเนินการ...';el.classList.remove('hidden')}
+function __pcBeginBusy(label){__pcBusyCount++;if(__pcBusyTimer)return;__pcBusyTimer=setTimeout(()=>{__pcBusyTimer=null;if(__pcBusyCount>0)__pcShowBusy(label)},250)}
+function __pcEndBusy(){__pcBusyCount=Math.max(0,__pcBusyCount-1);if(__pcBusyCount===0){if(__pcBusyTimer){clearTimeout(__pcBusyTimer);__pcBusyTimer=null}const el=qs('globalBusy');if(el)el.classList.add('hidden')}}
+function server(name,...args){__pcBeginBusy(__pcBusyLabel(name));return new Promise((resolve,reject)=>google.script.run.withSuccessHandler(v=>{__pcEndBusy();resolve(v)}).withFailureHandler(e=>{__pcEndBusy();reject(new Error(e&&e.message?e.message:String(e)))})[name](...args));}
 function esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 function qs(id){return document.getElementById(id)}
-function showToast(message){const old=qs('globalToast');if(old)old.remove();const el=document.createElement('div');el.id='globalToast';el.className='toast';el.textContent=message;document.body.appendChild(el);setTimeout(()=>el.remove(),4500)}
-async function nav(page,params={}){try{const url=await server('getAppNavigationUrl',page,params);window.open(url,'_top')}catch(e){showToast(e.message)}}
+function showToast(message,type='info',duration=4500){const old=qs('globalToast');if(old)old.remove();const el=document.createElement('div');el.id='globalToast';el.className='toast '+(type||'');el.textContent=message;document.body.appendChild(el);setTimeout(()=>{if(el&&el.parentNode)el.remove()},duration)}
+function showSuccess(message,duration=5000){showToast(message,'success',duration)}
+function showError(message,duration=6000){showToast(message,'error',duration)}
+function setSaveState(elOrId,message,state){const el=typeof elOrId==='string'?qs(elOrId):elOrId;if(!el)return;el.textContent=message||'';el.className='save-state '+(state||'')}
+async function nav(page,params={}){if(__pcNavBusy)return;__pcNavBusy=true;try{const url=await server('getAppNavigationUrl',page,params);window.open(url,'_top')}catch(e){__pcNavBusy=false;showError(e.message)}}
 function statusClass(s){return /COMMITTED|APPROVED$|PASS/.test(s)?'ok':/REVISION|FAILED|FIX/.test(s)?'danger':/WAITING|UPLOADING|IN_REVIEW|PENDING/.test(s)?'warn':''}
 function thDate(v){if(!v)return'-';try{return new Date(v).toLocaleString('th-TH',{dateStyle:'medium',timeStyle:'short'})}catch(e){return v}}
 </script>
