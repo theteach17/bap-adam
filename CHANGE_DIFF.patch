@@ -1,30 +1,29 @@
---- Index.html.before
-+++ Index.html.after
-@@ -502,13 +502,16 @@
+--- Index.html.pre-admin-menu-change
++++ Index.html.admin-only-layout-restored
+@@ -502,11 +502,11 @@
          <button class="nav-btn" id="adminTemplateMenu" style="display:none" onclick="goPage('PrecheckAdmin')"><i class="fas fa-list-check text-secondary"></i> จัดการแบบตรวจ</button>
        </div>
  
 -      <button class="nav-btn legacy-report-flow-btn" onclick="showReportForm()">
--        <i class="fas fa-file-signature text-primary"></i> ส่งรายงานฉบับสมบูรณ์ (Workflow เดิม)
--      </button>
--      
++      <button class="nav-btn legacy-report-flow-btn" id="adminLegacyReportMenu" style="display:none" onclick="showReportForm()">
+         <i class="fas fa-file-signature text-primary"></i> ส่งรายงานฉบับสมบูรณ์ (Workflow เดิม)
+       </button>
+       
 -      <button class="nav-btn" onclick="showNonCompletedProjectForm()">
--        <i class="fas fa-exclamation-triangle text-danger"></i> แจ้งกิจกรรมที่ไม่ได้ดำเนินการ
--      </button>
-+      <!-- ADMIN-only sidebar shortcuts; underlying workflows remain available through Unified Routing -->
-+      <div id="adminLegacyWorkflowMenu" style="display:none">
-+        <button class="nav-btn legacy-report-flow-btn" onclick="showReportForm()">
-+          <i class="fas fa-file-signature text-primary"></i> ส่งรายงานฉบับสมบูรณ์ (Workflow เดิม)
-+        </button>
-+        
-+        <button class="nav-btn" onclick="showNonCompletedProjectForm()">
-+          <i class="fas fa-exclamation-triangle text-danger"></i> แจ้งกิจกรรมที่ไม่ได้ดำเนินการ
-+        </button>
-+      </div>
++      <button class="nav-btn" id="adminLegacyNonCompletedMenu" style="display:none" onclick="showNonCompletedProjectForm()">
+         <i class="fas fa-exclamation-triangle text-danger"></i> แจ้งกิจกรรมที่ไม่ได้ดำเนินการ
+       </button>
      </div>
-     
-     <div class="logout-section">
-@@ -925,10 +928,26 @@
+@@ -516,7 +516,7 @@
+             <i class="fas fa-sign-out-alt me-2"></i> ออกจากระบบ
+         </button>
+         <div class="text-center mt-2 text-muted" style="font-size:0.7rem;">
+-            v.2.0.0<br>พัฒนาโดยงานแผนงานและสารสนเทศโรงเรียน
++            v.2.1.0<br>พัฒนาโดยงานแผนงานและสารสนเทศโรงเรียน
+         </div>
+     </div>
+   </div>
+@@ -925,10 +925,24 @@
          pcClientConfig = ctx || pcClientConfig;
          if (ctx && ctx.chunkSizeBytes) CHUNK_SIZE = Number(ctx.chunkSizeBytes);
          const roles = (ctx && ctx.roles) || [];
@@ -41,12 +40,10 @@
 +          document.getElementById('adminTemplateMenu').style.display = 'flex';
 +        }
 +
-+        // ADMIN-only visibility for the two legacy sidebar shortcuts.
-+        // Hidden in HTML by default; shown only after the server context confirms PRECHECK_ADMIN.
-+        const adminLegacyWorkflowMenu = document.getElementById('adminLegacyWorkflowMenu');
-+        if (adminLegacyWorkflowMenu) {
-+          adminLegacyWorkflowMenu.style.display = isPrecheckAdmin ? 'block' : 'none';
-+        }
++        const adminLegacyReportMenu = document.getElementById('adminLegacyReportMenu');
++        const adminLegacyNonCompletedMenu = document.getElementById('adminLegacyNonCompletedMenu');
++        if (adminLegacyReportMenu) adminLegacyReportMenu.style.display = isPrecheckAdmin ? 'flex' : 'none';
++        if (adminLegacyNonCompletedMenu) adminLegacyNonCompletedMenu.style.display = isPrecheckAdmin ? 'flex' : 'none';
 +
 +        if (ctx && ctx.displayName) {
 +          document.getElementById('displayUserName').textContent = ctx.displayName;

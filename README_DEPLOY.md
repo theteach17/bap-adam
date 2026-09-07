@@ -1,36 +1,26 @@
-# ADMIN-only Legacy Sidebar Menu Patch v1
+# ADMIN-only menu — Layout Restored v2
 
-## เป้าหมาย
-ซ่อนเมนู Sidebar 2 รายการจาก USER และ PRECHECK_OFFICER:
-1. ส่งรายงานฉบับสมบูรณ์ (Workflow เดิม)
-2. แจ้งกิจกรรมที่ไม่ได้ดำเนินการ
+แก้เฉพาะ Index.html
 
-แสดงเฉพาะเมื่อ Server `getNavigationContext()` คืน role `PRECHECK_ADMIN`.
+## สิ่งที่เปลี่ยน
+- ปุ่มเดิม `ส่งรายงานฉบับสมบูรณ์ (Workflow เดิม)` ซ่อนโดย default และแสดงเฉพาะ PRECHECK_ADMIN
+- ปุ่มเดิม `แจ้งกิจกรรมที่ไม่ได้ดำเนินการ` ซ่อนโดย default และแสดงเฉพาะ PRECHECK_ADMIN
+- ใช้ id บนปุ่มเดิมโดยตรง
+- ไม่มี div wrapper ใหม่
+- fail-closed หากโหลด role ไม่สำเร็จ
 
-## ขอบเขต
-แก้เพียง `Index.html`
+## สิ่งที่ไม่ได้เปลี่ยน
+- CSS ทั้ง `<style>` เหมือนเดิม byte-for-byte
+- sidebar/sidebar-menu/main-content/content-wrapper เหมือนเดิม
+- Router / Unified Submit
+- showReportForm / showNonCompletedProjectForm
+- Pre-check submission/review/commit
+- Database / Config / Trigger / Notification
+- ตารางและ footer
 
-ไม่ได้แก้ Router, Unified Submit, saveReport, saveNonCompletedProject, Pre-check Review, Commit, Notification, Schema, Settings หรือ Trigger
+## สิทธิ์
+USER: ไม่เห็น 2 ปุ่ม
+PRECHECK_OFFICER: ไม่เห็น 2 ปุ่ม
+PRECHECK_ADMIN: เห็น 2 ปุ่ม
 
-## เหตุผลที่ไม่ปิด Server Workflow
-สอง Workflow เดิมยังจำเป็นสำหรับผู้ใช้ทั่วไปเมื่อเข้าผ่านเมนู “ส่งเอกสาร” แล้ว Router ระบุว่าเป็น NON_COMPLETED_MEMO หรือ OTHER_DOCUMENT
-ดังนั้น requirement นี้เป็นเรื่อง “ซ่อน shortcut จาก Sidebar” ไม่ใช่ปิด Business Workflow
-
-## Fail-closed
-Container ของสองเมนูถูก `display:none` ตั้งแต่ HTML
-- ก่อน role โหลด: ไม่เห็น
-- โหลด role ล้มเหลว: ไม่เห็น
-- USER: ไม่เห็น
-- PRECHECK_OFFICER: ไม่เห็น
-- PRECHECK_ADMIN: เห็น
-
-ไม่มี email hard-code และไม่เพิ่ม client-side role source ใหม่
-
-## Deploy
-วางทับ `Index.html` เพียงไฟล์เดียว -> Deploy New version
-
-## Smoke test
-- USER: ไม่เห็น 2 เมนู
-- PRECHECK_OFFICER: ไม่เห็น 2 เมนู แต่ยังเห็น “ตรวจรายงาน Pre-check”
-- PRECHECK_ADMIN: เห็น 2 เมนูและ “จัดการแบบตรวจ”
-- USER ใช้ “ส่งเอกสาร” กับ NON_COMPLETED_MEMO/OTHER_DOCUMENT: Existing Workflow ยังเปิดได้ตามปกติ
+หมายเหตุ: label version คงค่าปัจจุบันของผู้ใช้เป็น v.2.1.0
