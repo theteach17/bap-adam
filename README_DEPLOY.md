@@ -1,18 +1,24 @@
-# Navigation + Cache Hardening v2
+# Final Navigation UX v3
 
-Replace these four files together:
+Replace together:
 - SharedScripts.html
 - SubmitDocument.html
 - PrecheckReview.html
-- DocumentRepository.gs
 
-Then:
-1. Push to branch commit-gs-v2.
-2. Pull into Apps Script.
-3. Deploy the same Web App as a New version.
-4. Run verifyPrecheckInstallation().
-5. Continue the existing บง 035/2569 revision test as V2.
+No schema migration. No setup rerun.
 
-No schema migration is required.
-Do not run setup/migration again.
-Do not use manual commit for the บง 035/2569 Auto Commit Trigger Gate.
+Why:
+Google Apps Script HTML Service uses an IFRAME sandbox. Top-level navigation is restricted to user activation, so automatic redirects after asynchronous server operations are not reliable by platform design.
+
+Changes:
+- Stop automatic redirect after successful submit/review completion.
+- No navigation lock is left active after successful business actions.
+- Success actions are immediately clickable.
+- Review completion actions are duplicated in a sticky bottom success panel.
+- Existing top success panel remains.
+- Navigation fallback lock releases after 0.9 second instead of 3.5 seconds.
+
+After deployment:
+1. Run verifyPrecheckInstallation().
+2. No new end-to-end document is required.
+3. Smoke-test one success/action button and one header navigation button.
