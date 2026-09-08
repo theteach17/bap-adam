@@ -83,8 +83,10 @@ function pcNormalizeQuantitativeResult_(value, required) {
     if (required) throw pcUserError_('กรุณาเลือกผลของเป้าหมายเชิงปริมาณ', 'QUANTITATIVE_RESULT_REQUIRED');
     return '';
   }
-  if (allowed.indexOf(text) === -1) throw pcUserError_('ค่าผลของเป้าหมายเชิงปริมาณไม่ถูกต้อง', 'INVALID_QUANTITATIVE_RESULT');
-  return text;
+  if (allowed.indexOf(text) !== -1) return text;
+  if (text === 'บรรลุ' || text === 'บรรลุเป้าหมาย') return allowed[0];
+  if (text === 'ไม่บรรลุ' || text === 'ไม่บรรลุเป้าหมาย') return allowed[1];
+  throw pcUserError_('ค่าผลของเป้าหมายเชิงปริมาณไม่ถูกต้อง', 'INVALID_QUANTITATIVE_RESULT');
 }
 
 /** Normalizes the legacy qualitative-target result enum. Blank is allowed while saving a draft. */
@@ -95,8 +97,10 @@ function pcNormalizeQualitativeResult_(value, required) {
     if (required) throw pcUserError_('กรุณาเลือกผลของเป้าหมายเชิงคุณภาพ', 'QUALITATIVE_RESULT_REQUIRED');
     return '';
   }
-  if (allowed.indexOf(text) === -1) throw pcUserError_('ค่าผลของเป้าหมายเชิงคุณภาพไม่ถูกต้อง', 'INVALID_QUALITATIVE_RESULT');
-  return text;
+  if (allowed.indexOf(text) !== -1) return text;
+  if (text === 'บรรลุ' || text === 'บรรลุเป้าหมาย') return allowed[0];
+  if (text === 'ไม่บรรลุ' || text === 'ไม่บรรลุเป้าหมาย') return allowed[1];
+  throw pcUserError_('ค่าผลของเป้าหมายเชิงคุณภาพไม่ถูกต้อง', 'INVALID_QUALITATIVE_RESULT');
 }
 
 /** Validates a Pre-check SD value as an exact two-decimal user input with no maximum ceiling. */
