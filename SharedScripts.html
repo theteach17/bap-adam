@@ -35,6 +35,9 @@ function __pcNavigateTop(url){try{if(window.top&&window.top.location){window.top
 function __pcManualNavNotice(url){if(__pcNavLeaving)return;const old=qs('globalToast');if(old)old.remove();const el=document.createElement('div');el.id='globalToast';el.className='toast warn';el.innerHTML='ยังเปิดหน้าถัดไปไม่สำเร็จ <a href="'+esc(url)+'" target="_top" rel="noopener" style="color:#fff;text-decoration:underline;font-weight:800">กดที่นี่เพื่อไปต่อ</a>';document.body.appendChild(el);setTimeout(()=>{if(el&&el.parentNode)el.remove()},20000)}
 function __pcNavWatchdog(url){setTimeout(()=>{if(__pcNavLeaving)return;__pcReleaseNavLock();__pcManualNavNotice(url)},4000)}
 async function nav(page,params={},options={}){
+  // [HARDENING v2.1.2] ใช้ lock เดียวกันทั้ง direct path และ server fallback
+  // เพื่อป้องกัน double-click/re-entry สร้าง navigation ซ้อนกันระหว่างที่หน้ากำลังเปลี่ยน
+  if(__pcNavBusy)return false;
   const direct=__pcBuildUrl(page,params);
   if(direct){__pcNavBusy=true;__pcNavBusySince=Date.now();__pcShowBusy(options.label||'กำลังเปิดหน้า...');__pcNavigateTop(direct);__pcNavWatchdog(direct);return true}
   return __pcNavViaServer(page,params,options);

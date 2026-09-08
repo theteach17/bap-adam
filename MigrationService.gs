@@ -7,7 +7,7 @@ function setupPrecheckSystem_(options){
   var cfg=getPrecheckConfig_(),created={};
   if(!cfg.dbId){
     var db=SpreadsheetApp.create('Central Information Pre-check DB');
-    props.setProperty('PC_DB_ID',db.getId());created.dbId=db.getId();
+    props.setProperty('PC_DB_ID',db.getId());pcMemoDrop_('cfg:precheck');created.dbId=db.getId();
     pcInitializeWorkflowSheets_(db);
   }else{
     pcInitializeWorkflowSheets_(SpreadsheetApp.openById(cfg.dbId));
@@ -17,6 +17,7 @@ function setupPrecheckSystem_(options){
   folderDefinitions.forEach(function(def){if(!pcConfig_(def[0],'')){var folder=DriveApp.createFolder(def[1]);props.setProperty(def[0],folder.getId());created[def[0]]=folder.getId();}});
   var defaults={PC_CHUNK_SIZE_BYTES:String(PC_CONST.DEFAULTS.CHUNK_SIZE_BYTES),PC_REVIEW_LOCK_MINUTES:String(PC_CONST.DEFAULTS.REVIEW_LOCK_MINUTES),PC_RECONCILE_ENABLED:'true',PC_COMMIT_MAX_AUTO_RETRY:String(PC_CONST.DEFAULTS.COMMIT_MAX_AUTO_RETRY),PC_COMMIT_ALERT_AFTER_MINUTES:String(PC_CONST.DEFAULTS.COMMIT_ALERT_AFTER_MINUTES),PC_DASHBOARD_PAGE_SIZE:String(PC_CONST.DEFAULTS.DASHBOARD_PAGE_SIZE),PC_SLA_ENABLED:'false',PC_SLA_WORKING_DAYS:String(PC_CONST.DEFAULTS.SLA_WORKING_DAYS),PC_SLA_WARNING_DAY:String(PC_CONST.DEFAULTS.SLA_WARNING_DAY),PC_BACKUP_RETENTION_DAYS:String(PC_CONST.DEFAULTS.BACKUP_RETENTION_DAYS),PC_ENFORCE_FROM_YEAR:'2569',PC_ENABLED:'false',PC_AUTO_COMMIT_ENABLED:'false',PC_ENFORCE_REPORT_ACTIVITY:'false',PC_UPLOAD_EXPIRE_MINUTES:String(PC_CONST.DEFAULTS.UPLOAD_EXPIRE_MINUTES)};
   Object.keys(defaults).forEach(function(k){if(props.getProperty(k)==null)props.setProperty(k,defaults[k]);});
+  pcMemoDrop_('cfg:precheck'); // [HARDENING v2.1.2] folder/default property writes must be visible in this execution
   pcSeedBaselineTemplate_();
   cfg=getPrecheckConfig_();
   if(cfg.officerGroupEmail&&cfg.stagingFolderId){try{DriveApp.getFolderById(cfg.stagingFolderId).addViewer(cfg.officerGroupEmail);}catch(e){console.warn('Unable to add staging viewer: '+e.message);}}
@@ -56,6 +57,7 @@ function pcSeedBaselineTemplate_(){
   pcEnsureProductionQuickComments_();
   pcValidatePublishedTemplate_(templateId);
   PropertiesService.getScriptProperties().setProperty('PC_DEFAULT_TEMPLATE_ID',templateId);
+  pcMemoDrop_('cfg:precheck'); // [HARDENING v2.1.2] keep config memo coherent after seeding the default template
 }
 
 /** Private editor function: dry-run or safely installs only AA:AF provenance columns in ReportSubmit. Idempotent after a successful migration. */

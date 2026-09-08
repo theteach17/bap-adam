@@ -262,6 +262,7 @@ function installProductionChecklistTemplate() {
       if(String(template.Status)===PC_CONST.TEMPLATE_STATUS.DRAFT)template=pcPatchObject_(PC_CONST.SHEETS.TEMPLATES,template._rowNumber,{Status:PC_CONST.TEMPLATE_STATUS.PUBLISHED,PublishedAt:pcNowIso_()});
       var quick=pcEnsureProductionQuickComments_();
       PropertiesService.getScriptProperties().setProperty('PC_DEFAULT_TEMPLATE_ID',String(template.TemplateId));
+      pcMemoDrop_('cfg:precheck'); // [HARDENING v2.1.2] expose the new default immediately in this execution
       var retired=[];
       pcListObjects_(PC_CONST.SHEETS.TEMPLATES).forEach(function(t){
         if(String(t.TemplateId)===String(template.TemplateId)||String(t.DocumentType)!==PC_CONST.DOCUMENT_TYPES.REPORT_ACTIVITY||String(t.Status)!==PC_CONST.TEMPLATE_STATUS.PUBLISHED)return;
@@ -282,7 +283,7 @@ function setDefaultPrecheckTemplate(templateId) {
     var principal=requirePrecheckAdmin_('setDefaultPrecheckTemplate');
     var template=pcFindObject_(PC_CONST.SHEETS.TEMPLATES,'TemplateId',templateId,false);
     if(!template||String(template.Status)!==PC_CONST.TEMPLATE_STATUS.PUBLISHED||String(template.DocumentType)!==PC_CONST.DOCUMENT_TYPES.REPORT_ACTIVITY)throw pcUserError_('ตั้งเป็นค่าเริ่มต้นได้เฉพาะแบบตรวจรายงานที่เผยแพร่แล้ว','INVALID_DEFAULT_TEMPLATE');
-    pcValidatePublishedTemplate_(templateId);PropertiesService.getScriptProperties().setProperty('PC_DEFAULT_TEMPLATE_ID',String(templateId));CacheService.getScriptCache().remove('PC_TEMPLATE_CACHE');
+    pcValidatePublishedTemplate_(templateId);PropertiesService.getScriptProperties().setProperty('PC_DEFAULT_TEMPLATE_ID',String(templateId));pcMemoDrop_('cfg:precheck');CacheService.getScriptCache().remove('PC_TEMPLATE_CACHE');
     pcAudit_('DEFAULT_TEMPLATE_CHANGED',{},principal,{templateId:templateId});return{success:true,templateId:templateId};
   }catch(error){throw pcHandlePublicError_(error,'setDefaultPrecheckTemplate',{templateId:templateId});}
 }

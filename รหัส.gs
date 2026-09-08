@@ -643,6 +643,7 @@ function doGet(e) {
       if (requestedPage === 'PrecheckOfficer' || requestedPage === 'PrecheckReview') {
         var officerPrincipal = getCurrentPrincipal_();
         if (officerPrincipal.roles.indexOf(PC_CONST.ROLES.OFFICER) === -1 && officerPrincipal.roles.indexOf(PC_CONST.ROLES.ADMIN) === -1) return renderPage_('AccessDenied');
+        if (!pcOfficerAllowedInPilot_(officerPrincipal)) return renderPage_('AccessDenied'); // [HARDENING v2.1.2] page gate = API gate
       }
       if (requestedPage === 'PrecheckAdmin') {
         var adminPrincipal = getCurrentPrincipal_();
@@ -1382,6 +1383,30 @@ function getGlobalSettings() {
   return getGlobalSettings_();
 }
 
+
+/**
+ * Explicit logout endpoint for Index.html.
+ * [HARDENING v2.1.2] Fail closed: redirect URL is returned only after the active
+ * session is confirmed inactive. getWebAppUrl() remains unchanged for Login.html compatibility.
+ */
+function logoutAndGetWebAppUrl() {
+  try {
+    pcInvalidateSessionMemo_(); // force a fresh server-side session read before logout
+    var before = getActiveSession_({ touch: false });
+    if (before.valid) {
+      if (!invalidateCurrentSession_('logout')) throw new Error('ไม่สามารถยกเลิกเซสชันปัจจุบันได้');
+      var after = getActiveSession_({ touch: false });
+      if (after.valid) throw new Error('ระบบยังตรวจพบเซสชันที่ใช้งานอยู่หลังการออกจากระบบ');
+    } else {
+      // Already expired/not found is already a logged-out state; remove any memoized identity.
+      pcInvalidateSessionMemo_();
+    }
+    return ScriptApp.getService().getUrl();
+  } catch (e) {
+    console.error('logoutAndGetWebAppUrl failed: ' + (e && e.message ? e.message : String(e)));
+    throw new Error('ออกจากระบบไม่สำเร็จ กรุณาลองอีกครั้ง');
+  }
+}
 
 function getWebAppUrl() {
   // Compatibility mode:

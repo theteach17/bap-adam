@@ -985,6 +985,8 @@
     }
 
     function goPage(page, params = {}) {
+      // [HARDENING v2.1.2] ป้องกัน double-click/re-entry ทั้ง direct path และ server fallback
+      if (pageNavigationInFlight) return;
       var direct = pcBuildAppUrl(page, params);
       if (direct) {
         pageNavigationInFlight = true;
@@ -994,11 +996,10 @@
         return;
       }
       // ทางสำรอง: ใช้เส้นทางเดิมผ่านเซิร์ฟเวอร์ เผื่อยังไม่ได้รับ baseUrl
-      if (pageNavigationInFlight) return;
       pageNavigationInFlight = true;
       showLoading('กำลังเปิดหน้า กรุณารอสักครู่...');
       google.script.run
-        .withSuccessHandler(function(url){ pageNavigationInFlight = false; pcNavigateTop(url); pcNavWatchdog(url); })
+        .withSuccessHandler(function(url){ pcNavigateTop(url); pcNavWatchdog(url); })
         .withFailureHandler(function(error){ pageNavigationInFlight = false; hideLoading(); onUploadFailed(error); })
         .getAppNavigationUrl(page, params);
     }
@@ -1077,8 +1078,8 @@
                 showLoading('กำลังออกจากระบบ...');
                 google.script.run
                     .withSuccessHandler(function(url) { pcNavigateTop(url); pcNavWatchdog(url); })
-                    .withFailureHandler(function(){ hideLoading(); showToastFallbackLogout(); })
-                    .getWebAppUrl();
+                    .withFailureHandler(function(error){ hideLoading(); showLogoutFailure(error); })
+                    .logoutAndGetWebAppUrl();
             }
         });
     }
@@ -2238,11 +2239,9 @@ function validateAndSaveReport() {
       }
     }
 
-    function showToastFallbackLogout() {
-      var base = '';
-      try { base = String(window.__PC_BASE_URL || ''); } catch (e) { base = ''; }
-      if (base) { pcNavigateTop(base); return; }
-      Swal.fire({ icon: 'warning', title: 'ออกจากระบบไม่สำเร็จ', text: 'กรุณาปิดแท็บนี้ หรือลองใหม่อีกครั้ง', confirmButtonColor: '#d63031' });
+    function showLogoutFailure(error) {
+      var message = (error && error.message) ? error.message : 'ระบบยังไม่ยืนยันการยกเลิกเซสชัน กรุณาลองออกจากระบบอีกครั้ง';
+      Swal.fire({ icon: 'warning', title: 'ออกจากระบบไม่สำเร็จ', text: message, confirmButtonColor: '#d63031' });
     }
 
     function showLoading(message) {
