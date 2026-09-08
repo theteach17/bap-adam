@@ -99,6 +99,45 @@ function pcNormalizeQualitativeResult_(value, required) {
   return text;
 }
 
+/** Validates a Pre-check SD value as an exact two-decimal user input with no maximum ceiling. */
+function pcValidatePrecheckSd_(value, fieldLabel, required) {
+  if (typeof value === 'number') {
+    if (!isFinite(value)) throw pcUserError_(fieldLabel + ' ต้องเป็นตัวเลขที่ถูกต้อง', 'INVALID_SD');
+    var scaled = value * 100;
+    if (Math.abs(scaled - Math.round(scaled)) > 1e-9) throw pcUserError_(fieldLabel + ' ต้องมีทศนิยมไม่เกิน 2 หลัก', 'INVALID_SD');
+    if (value < 0.01) throw pcUserError_(fieldLabel + ' ต้องไม่น้อยกว่า 0.01', 'INVALID_SD');
+    return value;
+  }
+  var text = String(value == null ? '' : value).trim();
+  if (!text) {
+    if (required) throw pcUserError_(fieldLabel + ' จำเป็นต้องกรอก', 'SD_REQUIRED');
+    return '';
+  }
+  if (!/^\d+\.\d{2}$/.test(text)) throw pcUserError_(fieldLabel + ' ต้องเป็นเลขทศนิยม 2 หลัก เช่น 1.25', 'INVALID_SD');
+  var numberValue = Number(text);
+  if (!isFinite(numberValue) || numberValue < 0.01) throw pcUserError_(fieldLabel + ' ต้องไม่น้อยกว่า 0.01', 'INVALID_SD');
+  return numberValue;
+}
+
+/** Validates Pre-check money as a non-negative number with at most two decimal places. */
+function pcValidatePrecheckMoney_(value, fieldLabel, required) {
+  if (typeof value === 'number') {
+    if (!isFinite(value) || value < 0) throw pcUserError_(fieldLabel + ' ต้องเป็นจำนวนตั้งแต่ 0 ขึ้นไป', 'INVALID_MONEY');
+    var scaled = value * 100;
+    if (Math.abs(scaled - Math.round(scaled)) > 1e-9) throw pcUserError_(fieldLabel + ' ต้องมีทศนิยมไม่เกิน 2 หลัก', 'INVALID_MONEY');
+    return value;
+  }
+  var text = String(value == null ? '' : value).replace(/,/g, '').trim();
+  if (!text) {
+    if (required) throw pcUserError_(fieldLabel + ' จำเป็นต้องกรอก', 'MONEY_REQUIRED');
+    return '';
+  }
+  if (!/^\d+(?:\.\d{1,2})?$/.test(text)) throw pcUserError_(fieldLabel + ' ต้องเป็นตัวเลขตั้งแต่ 0 ขึ้นไป และมีทศนิยมไม่เกิน 2 หลัก เช่น 12500.50', 'INVALID_MONEY');
+  var numberValue = Number(text);
+  if (!isFinite(numberValue) || numberValue < 0) throw pcUserError_(fieldLabel + ' ต้องเป็นจำนวนตั้งแต่ 0 ขึ้นไป', 'INVALID_MONEY');
+  return numberValue;
+}
+
 /** Applies only client-supplied editable draft fields while preserving existing draft values on resume. */
 function pcPatchDraftFields_(version, payload, document, principal) {
   payload = payload || {};
@@ -120,11 +159,11 @@ function pcPatchDraftFields_(version, payload, document, principal) {
     patch.ExpectedAchievementResult = expectedAchievement;
   }
   if (has('managementXbar')) patch.ManagementXbar = validateDecimalTwoPlaces_(payload.managementXbar, 0.01, 5.00, 'ค่า X̄ (X Bar) ของผลการบริหารกิจกรรม', false);
-  if (has('managementSD')) patch.ManagementSD = validateDecimalTwoPlaces_(payload.managementSD, 0.01, 1.00, 'ค่า SD ผลการบริหารกิจกรรม', false);
+  if (has('managementSD')) patch.ManagementSD = pcValidatePrecheckSd_(payload.managementSD, 'ค่า SD ผลการบริหารกิจกรรม', false);
   if (has('satisfactionXbar')) patch.SatisfactionXbar = validateDecimalTwoPlaces_(payload.satisfactionXbar, 0.01, 5.00, 'ค่า X̄ (X Bar) ความพึงพอใจ', false);
-  if (has('satisfactionSD')) patch.SatisfactionSD = validateDecimalTwoPlaces_(payload.satisfactionSD, 0.01, 1.00, 'ค่า SD ความพึงพอใจ', false);
-  if (has('allocatedBudget')) patch.AllocatedBudget = pcNumberOrBlank_(payload.allocatedBudget, 'งบประมาณที่ได้รับจัดสรร', 0);
-  if (has('actualBudget')) patch.ActualBudget = pcNumberOrBlank_(payload.actualBudget, 'งบประมาณที่ใช้จริง', 0);
+  if (has('satisfactionSD')) patch.SatisfactionSD = pcValidatePrecheckSd_(payload.satisfactionSD, 'ค่า SD ความพึงพอใจ', false);
+  if (has('allocatedBudget')) patch.AllocatedBudget = pcValidatePrecheckMoney_(payload.allocatedBudget, 'งบประมาณที่ได้รับจัดสรร', false);
+  if (has('actualBudget')) patch.ActualBudget = pcValidatePrecheckMoney_(payload.actualBudget, 'งบประมาณที่ใช้จริง', false);
 
   // PRIndicator is deliberately ignored here. It is an internal/database
   // concern and the browser is never authoritative for this field.
@@ -137,13 +176,14 @@ function pcValidateVersionForSubmit_(version, document) {
   requiredText.forEach(function(field){ if (!String(version[field] == null ? '' : version[field]).trim()) throw pcUserError_('กรุณากรอกข้อมูลรายงานให้ครบถ้วนก่อนส่งตรวจ', 'SUBMISSION_INCOMPLETE'); });
   pcNormalizeQuantitativeResult_(version.QuantitativeResult, true);
   pcNormalizeQualitativeResult_(version.QualitativeResult, true);
-  if (version.AllocatedBudget === '' || version.ActualBudget === '') throw pcUserError_('กรุณากรอกข้อมูลงบประมาณให้ครบถ้วน', 'SUBMISSION_INCOMPLETE');
+  pcValidatePrecheckMoney_(version.AllocatedBudget, 'งบประมาณที่ได้รับจัดสรร', true);
+  pcValidatePrecheckMoney_(version.ActualBudget, 'งบประมาณที่ใช้จริง', true);
   if (!version.FileId || !version.FileUrl || String(version.MimeType || '') !== 'application/pdf') throw pcUserError_('กรุณาอัปโหลดไฟล์ PDF ให้สำเร็จก่อนส่งตรวจ', 'PDF_REQUIRED');
   if (document.requiresStatistics) {
     validateDecimalTwoPlaces_(version.ManagementXbar, 0.01, 5.00, 'ค่า X̄ (X Bar) ของผลการบริหารกิจกรรม', true);
-    validateDecimalTwoPlaces_(version.ManagementSD, 0.01, 1.00, 'ค่า SD ผลการบริหารกิจกรรม', true);
+    pcValidatePrecheckSd_(version.ManagementSD, 'ค่า SD ผลการบริหารกิจกรรม', true);
     validateDecimalTwoPlaces_(version.SatisfactionXbar, 0.01, 5.00, 'ค่า X̄ (X Bar) ความพึงพอใจ', true);
-    validateDecimalTwoPlaces_(version.SatisfactionSD, 0.01, 1.00, 'ค่า SD ความพึงพอใจ', true);
+    pcValidatePrecheckSd_(version.SatisfactionSD, 'ค่า SD ความพึงพอใจ', true);
   }
   return true;
 }

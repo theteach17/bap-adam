@@ -201,9 +201,9 @@ function correctStructuredData(submissionId,versionId,fieldName,newValue,reason)
     if(!whitelist[fieldName]) throw pcUserError_('Field นี้ไม่อนุญาตให้เจ้าหน้าที่แก้ไข','FIELD_NOT_WHITELISTED');
     if(!reason) throw pcUserError_('กรุณาระบุเหตุผลการแก้ไข','CORRECTION_REASON_REQUIRED');
     var normalized=newValue;
-    if(whitelist[fieldName]==='money') normalized=pcNumberOrBlank_(newValue,fieldName,0);
+    if(whitelist[fieldName]==='money') normalized=pcValidatePrecheckMoney_(newValue,fieldName,true);
     if(whitelist[fieldName]==='xbar') normalized=validateDecimalTwoPlaces_(newValue,0.01,5.00,fieldName,true);
-    if(whitelist[fieldName]==='sd') normalized=validateDecimalTwoPlaces_(newValue,0.01,1.00,fieldName,true);
+    if(whitelist[fieldName]==='sd') normalized=pcValidatePrecheckSd_(newValue,fieldName,true);
     if(whitelist[fieldName]==='enum'&&['บรรลุ','ไม่บรรลุ'].indexOf(String(newValue))===-1) throw pcUserError_('ค่าผลลัพธ์ไม่ถูกต้อง','INVALID_RESULT_ENUM');
     var auditData=pcWithScriptLock_(function(){
       var submission=pcSubmissionById_(submissionId),version=pcVersionById_(versionId);
