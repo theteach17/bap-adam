@@ -1,0 +1,443 @@
+Only in proj/bap-adam-commit-gs-v2: #U0e23#U0e2b#U0e31#U0e2a.gs
+diff -ru --label เดิม --label แก้ไขแล้ว "\340\271\200\340\270\224\340\270\264\340\270\241" "\340\271\201\340\270\201\340\271\211\340\271\204\340\270\202\340\271\201\340\270\245\340\271\211\340\270\247"
+--- เดิม
++++ แก้ไขแล้ว
+@@ -1,6 +1,19 @@
+-/** Resolves the authenticated principal from the existing session and Workspace identity. */
++/**
++ * Resolves the authenticated principal from the existing session and Workspace identity.
++ * [PERF PATCH v2.1.1] ฟังก์ชันนี้ถูกเรียกซ้ำ 2-5 ครั้งต่อ 1 คำขอ และแต่ละครั้งอ่านชีต
++ * Credential ทั้งใบใหม่ จึงจำผลไว้ต่อ execution โดย "ผูกกับ userKeyHash ของผู้ใช้"
++ * ถ้าเป็นคนละคนจะคำนวณใหม่เสมอ ไม่มีทางได้สิทธิ์ข้ามผู้ใช้
++ */
+ function getCurrentPrincipal_() {
+   var session = requireAuth_('principal');
++  var identity = String(session.userKeyHash || '') + '|' + String(session.username || '');
++  return pcMemoScoped_('principal', identity, function() {
++    return pcBuildCurrentPrincipal_(session);
++  });
++}
++
++/** Builds the principal from a validated session. Behaviour identical to the original. */
++function pcBuildCurrentPrincipal_(session) {
+   var activeEmail = '';
+   try { activeEmail = String(Session.getActiveUser().getEmail() || '').trim(); } catch (e) { activeEmail = ''; }
+   var credentialEmail = pcCredentialEmailForUsername_(session.username);
+diff -ru --label เดิม --label แก้ไขแล้ว "\340\271\200\340\270\224\340\270\264\340\270\241" "\340\271\201\340\270\201\340\271\211\340\271\204\340\270\202\340\271\201\340\270\245\340\271\211\340\270\247"
+--- เดิม
++++ แก้ไขแล้ว
+@@ -1 +1,9 @@
+-<!DOCTYPE html><html lang="th"><head><base target="_top"><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ศูนย์สารสนเทศกลาง</title><style>body{font-family:Arial,'Noto Sans Thai',sans-serif;background:#f6f8fb;margin:0;display:grid;place-items:center;min-height:100vh;color:#263238}.card{background:white;padding:32px;border-radius:18px;box-shadow:0 12px 36px rgba(0,0,0,.1);max-width:520px;text-align:center}button{border:0;border-radius:10px;padding:12px 18px;background:#0d6efd;color:white;font-weight:700;cursor:pointer}</style></head><body><div class="card"><h1>ศูนย์สารสนเทศกลาง</h1><p>ไม่สามารถเปิดหน้านี้ได้ เนื่องจากสิทธิ์ไม่เพียงพอหรือ Session หมดอายุ</p><button onclick="google.script.run.withSuccessHandler(u=>window.open(u,'_top')).getAppNavigationUrl('Index',{})">กลับหน้าหลัก</button></div></body></html>
++<!DOCTYPE html><html lang="th"><head><base target="_top"><script>window.__PC_BASE_URL=<?!= pcBaseUrlLiteral_() ?>;</script><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ศูนย์สารสนเทศกลาง</title><style>body{font-family:Arial,'Noto Sans Thai',sans-serif;background:#f6f8fb;margin:0;display:grid;place-items:center;min-height:100vh;color:#263238}.card{background:white;padding:32px;border-radius:18px;box-shadow:0 12px 36px rgba(0,0,0,.1);max-width:520px;text-align:center}button{border:0;border-radius:10px;padding:12px 18px;background:#0d6efd;color:white;font-weight:700;cursor:pointer}</style></head><body><div class="card"><h1>ศูนย์สารสนเทศกลาง</h1><p>ไม่สามารถเปิดหน้านี้ได้ เนื่องจากสิทธิ์ไม่เพียงพอหรือ Session หมดอายุ</p><button id="backHome" onclick="pcBack()">กลับหน้าหลัก</button>
++<script>
++/* [NAV PATCH v2.1.1] เปลี่ยนหน้าโดยไม่ต้องรอเซิร์ฟเวอร์ ทำให้อยู่ในจังหวะ user activation เสมอ */
++function pcBack(){
++  var base='';try{base=String(window.__PC_BASE_URL||'')}catch(e){base=''}
++  if(base){var u=base+'?page=Index';try{if(window.top&&window.top.location){window.top.location.href=u;return}}catch(e){}window.open(u,'_top');return}
++  google.script.run.withSuccessHandler(function(u){try{window.top.location.href=u}catch(e){window.open(u,'_top')}}).getAppNavigationUrl('Index',{});
++}
++</script></div></body></html>
+diff -ru --label เดิม --label แก้ไขแล้ว "\340\271\200\340\270\224\340\270\264\340\270\241" "\340\271\201\340\270\201\340\271\211\340\271\204\340\270\202\340\271\201\340\270\245\340\271\211\340\270\247"
+--- เดิม
++++ แก้ไขแล้ว
+@@ -4,8 +4,18 @@
+   return value == null || value === '' ? fallback : value;
+ }
+ 
+-/** Returns effective configuration with safe defaults for non-secret operational values. */
++/**
++ * Returns effective configuration with safe defaults for non-secret operational values.
++ * [PERF PATCH v2.1.1] ค่าคอนฟิกชุดเดียวกันถูกอ่านซ้ำหลายสิบครั้งต่อ 1 คำขอ
++ * (ทุกครั้งที่เรียก pcSheet_ จะวิ่งมาอ่าน Script Properties ใหม่ 25 คีย์)
++ * จึงจำค่าไว้ 1 ชุดต่อ execution ค่าที่ได้เหมือนเดิมทุกประการ
++ */
+ function getPrecheckConfig_() {
++  return pcMemo_('cfg:precheck', pcBuildPrecheckConfig_);
++}
++
++/** Builds the effective configuration from Script Properties. Behaviour identical to the original. */
++function pcBuildPrecheckConfig_() {
+   return {
+     enabled: pcBool_(pcConfig_('PC_ENABLED', 'false'), false),
+     autoCommitEnabled: pcBool_(pcConfig_('PC_AUTO_COMMIT_ENABLED', 'false'), false),
+@@ -141,6 +151,7 @@
+   var previewStaging=props.PC_STAGING_FOLDER_ID||pcConfig_('PC_STAGING_FOLDER_ID','');
+   if (props.PC_STAGING_FOLDER_ID) pcDriveFolder_(props.PC_STAGING_FOLDER_ID,'Staging');
+   PropertiesService.getScriptProperties().setProperties(props, false);
++  pcMemoReset_(); // [PERF PATCH v2.1.1] ล้างแคชคอนฟิกทันทีหลังเปลี่ยนค่า เพื่อไม่ให้ได้ค่าเก่า
+   CacheService.getScriptCache().remove('PC_ACCESS_CACHE');
+   var updated=getPrecheckConfig_();
+   if(updated.officerGroupEmail&&updated.stagingFolderId){
+diff -ru --label เดิม --label แก้ไขแล้ว "\340\271\200\340\270\224\340\270\264\340\270\241" "\340\271\201\340\270\201\340\271\211\340\271\204\340\270\202\340\271\201\340\270\245\340\271\211\340\270\247"
+--- เดิม
++++ แก้ไขแล้ว
+@@ -1,7 +1,7 @@
+ <!DOCTYPE html>
+ <html lang="th">
+ <head>
+-  <base target="_top">
++  <base target="_top"><script>window.__PC_BASE_URL=<?!= pcBaseUrlLiteral_() ?>;</script>
+   <meta charset="UTF-8">
+   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+   <title>ศูนย์สารสนเทศกลาง</title>
+@@ -923,12 +923,82 @@
+       setInterval(updateClock, 1000);
+     };
+ 
++    /* =====================================================================
++       [NAV PATCH v2.1.1] แก้อาการ "กดเมนูแล้วปุ่มไม่ทำงาน ต้องรีเฟรชก่อน"
++       สาเหตุเดิม 2 ข้อที่ทำงานร่วมกัน:
++         1) pageNavigationInFlight ถูกตั้งเป็น true แล้ว "ไม่เคยถูกคืนค่าในกรณีสำเร็จ"
++            ถ้าการเปลี่ยนหน้าไม่เกิดขึ้นจริง ตัวแปรนี้จะค้างเป็น true ตลอด
++            ปุ่มเมนูทุกปุ่มจึงตายทั้งหน้า จนกว่าจะรีเฟรช
++         2) window.open(url,'_top') ถูกเรียกใน callback หลังรอเซิร์ฟเวอร์
++            iframe ของ Apps Script ตั้ง sandbox เป็น
++            allow-top-navigation-by-user-activation เมื่อเซิร์ฟเวอร์ตอบช้า
++            เกินอายุ user activation เบราว์เซอร์จะบล็อกการเปลี่ยนหน้าแบบเงียบ ๆ
++            และ Swal loading (allowOutsideClick:false) ก็ค้างคาหน้าจอ
++            ผู้ใช้จึงเห็นเป็น "โหลดนานผิดปกติ" หรือ "กดแล้วไม่ไปไหน"
++       วิธีแก้: ประกอบ URL ที่ฝั่งหน้าเว็บทันที (ไม่มี round-trip คั่น)
++       จึงเปลี่ยนหน้าได้ในจังหวะที่ผู้ใช้กดปุ่มจริง พร้อมมี watchdog คืนสถานะเสมอ
++       การตรวจสิทธิ์ยังอยู่ที่ doGet() ครบถ้วนเหมือนเดิมทุกประการ
++       ===================================================================== */
++    const PC_NAV_PAGES = ['Index','SubmitDocument','MyDocuments','PrecheckSubmit','PrecheckDetail','PrecheckOfficer','PrecheckReview','PrecheckAdmin'];
+     let pageNavigationInFlight = false;
++    let pageNavigationLeaving = false;
++    window.addEventListener('pagehide', function(){ pageNavigationLeaving = true; });
++    window.addEventListener('beforeunload', function(){ pageNavigationLeaving = true; });
++
++    function pcBuildAppUrl(page, params) {
++      var base = '';
++      try { base = String(window.__PC_BASE_URL || ''); } catch (e) { base = ''; }
++      page = String(page || '');
++      if (!base || PC_NAV_PAGES.indexOf(page) === -1) return '';
++      var url = base + '?page=' + encodeURIComponent(page);
++      Object.keys(params || {}).forEach(function(k){
++        if (!/^[A-Za-z0-9_]+$/.test(k)) return;
++        url += '&' + encodeURIComponent(k) + '=' + encodeURIComponent(String(params[k]));
++      });
++      return url;
++    }
++
++    function pcNavigateTop(url) {
++      try { if (window.top && window.top.location) { window.top.location.href = url; return; } } catch (e) {}
++      try { window.open(url, '_top'); return; } catch (e) {}
++      var a = document.createElement('a');
++      a.href = url; a.target = '_top'; a.rel = 'noopener'; a.style.display = 'none';
++      document.body.appendChild(a); a.click();
++      setTimeout(function(){ if (a.parentNode) a.remove(); }, 1000);
++    }
++
++    // ถ้าเบราว์เซอร์บล็อกการเปลี่ยนหน้า ผู้ใช้ต้องไม่ค้างอยู่กับหน้าจอ loading
++    // และต้องกดเมนูอื่นต่อได้ทันทีโดยไม่ต้องรีเฟรช
++    function pcNavWatchdog(url) {
++      setTimeout(function(){
++        if (pageNavigationLeaving) return;
++        pageNavigationInFlight = false;
++        hideLoading();
++        Swal.fire({
++          icon: 'info',
++          title: 'ยังเปิดหน้าถัดไปไม่สำเร็จ',
++          html: 'กรุณากดปุ่มด้านล่างเพื่อไปต่อ<br><a href="' + url + '" target="_top" rel="noopener">เปิดหน้าที่ต้องการ</a>',
++          confirmButtonText: 'ปิด',
++          confirmButtonColor: '#d63031'
++        });
++      }, 4000);
++    }
++
+     function goPage(page, params = {}) {
++      var direct = pcBuildAppUrl(page, params);
++      if (direct) {
++        pageNavigationInFlight = true;
++        showLoading('กำลังเปิดหน้า กรุณารอสักครู่...');
++        pcNavigateTop(direct);
++        pcNavWatchdog(direct);
++        return;
++      }
++      // ทางสำรอง: ใช้เส้นทางเดิมผ่านเซิร์ฟเวอร์ เผื่อยังไม่ได้รับ baseUrl
+       if (pageNavigationInFlight) return;
+       pageNavigationInFlight = true;
+       showLoading('กำลังเปิดหน้า กรุณารอสักครู่...');
+-      google.script.run.withSuccessHandler(function(url){ window.open(url, '_top'); })
++      google.script.run
++        .withSuccessHandler(function(url){ pageNavigationInFlight = false; pcNavigateTop(url); pcNavWatchdog(url); })
+         .withFailureHandler(function(error){ pageNavigationInFlight = false; hideLoading(); onUploadFailed(error); })
+         .getAppNavigationUrl(page, params);
+     }
+@@ -1003,9 +1073,12 @@
+         }).then((result) => {
+             if (result.isConfirmed) {
+                 // เปลี่ยนจากการฮาร์ดโค้ด เป็นการเรียกฟังก์ชันดึง URL อัตโนมัติจากเซิร์ฟเวอร์
+-                google.script.run.withSuccessHandler(function(url) {
+-                    window.open(url, "_top");
+-                }).getWebAppUrl();
++                // [NAV PATCH v2.1.1] ใช้ตัวช่วยเดียวกับเมนู เพื่อไม่ให้ค้างเมื่อเบราว์เซอร์บล็อกการเปลี่ยนหน้า
++                showLoading('กำลังออกจากระบบ...');
++                google.script.run
++                    .withSuccessHandler(function(url) { pcNavigateTop(url); pcNavWatchdog(url); })
++                    .withFailureHandler(function(){ hideLoading(); showToastFallbackLogout(); })
++                    .getWebAppUrl();
+             }
+         });
+     }
+@@ -2165,6 +2238,13 @@
+       }
+     }
+ 
++    function showToastFallbackLogout() {
++      var base = '';
++      try { base = String(window.__PC_BASE_URL || ''); } catch (e) { base = ''; }
++      if (base) { pcNavigateTop(base); return; }
++      Swal.fire({ icon: 'warning', title: 'ออกจากระบบไม่สำเร็จ', text: 'กรุณาปิดแท็บนี้ หรือลองใหม่อีกครั้ง', confirmButtonColor: '#d63031' });
++    }
++
+     function showLoading(message) {
+       Swal.fire({ title: message || 'กำลังดำเนินการ...', allowOutsideClick: false, didOpen: () => { Swal.showLoading(); }});
+     }
+diff -ru --label เดิม --label แก้ไขแล้ว "\340\271\200\340\270\224\340\270\264\340\270\241" "\340\271\201\340\270\201\340\271\211\340\271\204\340\270\202\340\271\201\340\270\245\340\271\211\340\270\247"
+--- เดิม
++++ แก้ไขแล้ว
+@@ -1,6 +1,6 @@
+ <!DOCTYPE html>
+ <html lang="th">
+-<head>
++<head><script>window.__PC_BASE_URL=<?!= pcBaseUrlLiteral_() ?>;</script>
+   <meta charset="UTF-8">
+   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+   <title>เข้าสู่ระบบ - ศูนย์สารสนเทศกลาง</title>
+diff -ru --label เดิม --label แก้ไขแล้ว "\340\271\200\340\270\224\340\270\264\340\270\241" "\340\271\201\340\270\201\340\271\211\340\271\204\340\270\202\340\271\201\340\270\245\340\271\211\340\270\247"
+--- เดิม
++++ แก้ไขแล้ว
+@@ -1,4 +1,4 @@
+-<!DOCTYPE html><html lang="th"><head><base target="_top"><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ศูนย์สารสนเทศกลาง</title><?!= include_('SharedStyles'); ?></head><body>
++<!DOCTYPE html><html lang="th"><head><base target="_top"><script>window.__PC_BASE_URL=<?!= pcBaseUrlLiteral_() ?>;</script><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ศูนย์สารสนเทศกลาง</title><?!= include_('SharedStyles'); ?></head><body>
+ <div class="top"><div class="brand">ศูนย์สารสนเทศกลาง</div><span class="muted">รายการเอกสารของฉัน</span><div class="spacer"></div><button class="btn btn-primary" onclick="nav('SubmitDocument')">ส่งเอกสาร</button><button class="btn btn-secondary" onclick="nav('Index')">หน้าหลัก</button></div>
+ <div class="container"><div class="card"><div class="actions"><div class="field"><label>ปีเอกสาร</label><input id="year" inputmode="numeric" style="width:130px"></div><div class="field"><label>สถานะ</label><select id="status"><option value="">ทั้งหมด</option><option>DRAFT</option><option>WAITING_REVIEW</option><option>IN_REVIEW</option><option>REVISION_REQUIRED</option><option>WAITING_REVIEW_REVISED</option><option>APPROVED_PENDING_COMMIT</option><option>APPROVED_COMMITTING</option><option>APPROVED_COMMITTED</option><option>APPROVED_COMMIT_FAILED</option></select></div><button id="searchBtn" class="btn btn-primary" onclick="loadDocs()">ค้นหา</button></div></div>
+ <div class="card"><div id="state" class="muted">กำลังโหลด...</div><div class="table-wrap" style="margin-top:12px"><table><thead><tr><th>เลขเอกสาร</th><th>ชื่อเอกสาร</th><th>Version</th><th>สถานะ</th><th>อัปเดต</th><th></th></tr></thead><tbody id="rows"></tbody></table></div></div></div>
+Only in out/bap-adam-commit-gs-v2: PerfCache.gs
+diff -ru --label เดิม --label แก้ไขแล้ว "\340\271\200\340\270\224\340\270\264\340\270\241" "\340\271\201\340\270\201\340\271\211\340\271\204\340\270\202\340\271\201\340\270\245\340\271\211\340\270\247"
+--- เดิม
++++ แก้ไขแล้ว
+@@ -1,7 +1,7 @@
+ <!DOCTYPE html>
+ <html lang="th">
+ <head>
+-  <base target="_top">
++  <base target="_top"><script>window.__PC_BASE_URL=<?!= pcBaseUrlLiteral_() ?>;</script>
+   <meta charset="UTF-8">
+   <meta name="viewport" content="width=device-width,initial-scale=1">
+   <title>ศูนย์สารสนเทศกลาง</title>
+diff -ru --label เดิม --label แก้ไขแล้ว "\340\271\200\340\270\224\340\270\264\340\270\241" "\340\271\201\340\270\201\340\271\211\340\271\204\340\270\202\340\271\201\340\270\245\340\271\211\340\270\247"
+--- เดิม
++++ แก้ไขแล้ว
+@@ -1,4 +1,4 @@
+-<!DOCTYPE html><html lang="th"><head><base target="_top"><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ศูนย์สารสนเทศกลาง</title><?!= include_('SharedStyles'); ?></head><body>
++<!DOCTYPE html><html lang="th"><head><base target="_top"><script>window.__PC_BASE_URL=<?!= pcBaseUrlLiteral_() ?>;</script><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ศูนย์สารสนเทศกลาง</title><?!= include_('SharedStyles'); ?></head><body>
+ <div class="top"><div class="brand">ศูนย์สารสนเทศกลาง</div><span class="muted">รายละเอียดเอกสาร</span><div class="spacer"></div><button class="btn btn-secondary" onclick="nav('MyDocuments')">รายการของฉัน</button><button class="btn btn-secondary" onclick="nav('Index')">หน้าหลัก</button></div>
+ <div class="container"><div id="loading" class="card"><span class="loading"><span class="spinner"></span>กำลังโหลด...</span></div><div id="content" class="hidden">
+ <div class="card"><div class="actions" style="justify-content:space-between"><div><h2 id="docNo" style="margin:0"></h2><div id="docName" class="muted"></div></div><span id="status" class="status"></span></div><div id="meta" class="grid3" style="margin-top:16px"></div><div class="actions" style="margin-top:16px"><button id="reviseBtn" class="btn btn-primary hidden">ส่งฉบับแก้ไข</button><button id="allBtn" class="btn btn-secondary" onclick="toggleAll()">ดูผลการตรวจทั้งหมด</button></div></div>
+diff -ru --label เดิม --label แก้ไขแล้ว "\340\271\200\340\270\224\340\270\264\340\270\241" "\340\271\201\340\270\201\340\271\211\340\271\204\340\270\202\340\271\201\340\270\245\340\271\211\340\270\247"
+--- เดิม
++++ แก้ไขแล้ว
+@@ -1,4 +1,4 @@
+-<!DOCTYPE html><html lang="th"><head><base target="_top"><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ศูนย์สารสนเทศกลาง</title><?!= include_('SharedStyles'); ?></head><body>
++<!DOCTYPE html><html lang="th"><head><base target="_top"><script>window.__PC_BASE_URL=<?!= pcBaseUrlLiteral_() ?>;</script><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ศูนย์สารสนเทศกลาง</title><?!= include_('SharedStyles'); ?></head><body>
+ <div class="top"><div class="brand">ศูนย์สารสนเทศกลาง</div><span class="muted">งานตรวจเอกสาร</span><div class="spacer"></div><button class="btn btn-secondary" onclick="nav('Index')">หน้าหลัก</button></div><div class="container">
+ <div id="kpis" class="kpis"></div><div class="card"><div class="grid3"><div class="field"><label>ปีเอกสาร</label><input id="year"></div><div class="field"><label>สถานะ</label><select id="status"><option value="">ทั้งหมด</option><option>WAITING_REVIEW</option><option>IN_REVIEW</option><option>WAITING_REVIEW_REVISED</option><option>REVISION_REQUIRED</option><option>APPROVED_COMMITTED</option><option>APPROVED_COMMIT_FAILED</option></select></div><div class="field"><label>กลุ่มบริหาร</label><input id="adminGroup"></div><div class="field"><label>กลุ่มงาน</label><input id="workGroup"></div><div class="field"><label>ผู้รับผิดชอบ</label><input id="owner"></div><div class="field"><label>ผู้ตรวจ</label><input id="reviewer"></div><div class="field"><label>ตั้งแต่วันที่</label><input id="dateFrom" type="date"></div><div class="field"><label>ถึงวันที่</label><input id="dateTo" type="date"></div><div class="field"><label><input id="revisedOnly" type="checkbox"> เฉพาะฉบับแก้ไข</label></div></div><div class="actions" style="margin-top:14px"><button class="btn btn-primary" id="searchBtn" onclick="go(1)">ค้นหา</button></div></div>
+ <div class="card"><div id="state" class="muted"></div><div class="table-wrap" style="margin-top:10px"><table><thead><tr><th>เอกสาร</th><th>กลุ่มงาน</th><th>ผู้รับผิดชอบ</th><th>สถานะ</th><th>Version</th><th>ผู้ตรวจ</th><th>SLA</th><th></th></tr></thead><tbody id="rows"></tbody></table></div><div class="actions" style="justify-content:center;margin-top:14px"><button id="prev" class="btn btn-secondary">ก่อนหน้า</button><span id="pageText"></span><button id="next" class="btn btn-secondary">ถัดไป</button></div></div></div><?!= include_('SharedScripts'); ?><script>
+diff -ru --label เดิม --label แก้ไขแล้ว "\340\271\200\340\270\224\340\270\264\340\270\241" "\340\271\201\340\270\201\340\271\211\340\271\204\340\270\202\340\271\201\340\270\245\340\271\211\340\270\247"
+--- เดิม
++++ แก้ไขแล้ว
+@@ -1,11 +1,27 @@
+-/** Opens the isolated Pre-check workflow database. */
++/**
++ * Opens the isolated Pre-check workflow database.
++ * [PERF PATCH v2.1.1] เปิดสเปรดชีตเดิมซ้ำหลายสิบครั้งต่อคำขอ จึงจำ handle ไว้ 1 ครั้งต่อ execution
++ */
+ function getPrecheckSpreadsheet_() {
+   var cfg = requirePrecheckDbConfig_();
+-  return SpreadsheetApp.openById(cfg.dbId);
++  return pcMemo_('ss:precheck:' + cfg.dbId, function() {
++    return SpreadsheetApp.openById(cfg.dbId);
++  });
+ }
+ 
+-/** Returns a workflow sheet and validates its exact header contract. */
++/**
++ * Returns a workflow sheet and validates its exact header contract.
++ * [PERF PATCH v2.1.1] การตรวจ header contract ยังทำครบเหมือนเดิม แต่ทำครั้งเดียวต่อ
++ * execution แทนที่จะยิงอ่านแถวหัวตารางใหม่ทุกครั้งที่เรียกใช้ชีต
++ */
+ function pcSheet_(sheetName) {
++  return pcMemo_('sheet:' + sheetName, function() {
++    return pcOpenValidatedSheet_(sheetName);
++  });
++}
++
++/** Opens and header-validates a workflow sheet. Behaviour identical to the original pcSheet_. */
++function pcOpenValidatedSheet_(sheetName) {
+   var ss = getPrecheckSpreadsheet_();
+   var sheet = ss.getSheetByName(sheetName);
+   if (!sheet) throw new Error('Missing workflow sheet: ' + sheetName);
+@@ -26,8 +42,21 @@
+   return out;
+ }
+ 
+-/** Lists workflow sheet rows as objects using one batch read. */
++/**
++ * Lists workflow sheet rows as objects using one batch read.
++ * [PERF PATCH v2.1.1] เดิมหนึ่งคำขออ่านชีตเดิมซ้ำได้ถึง 4-5 รอบ (เช่น openReview อ่าน
++ * PC_Reviews 3 รอบ, getMyDocumentDetail อ่าน PC_ReviewResponses 1 รอบต่อ 1 review)
++ * จึงจำผลอ่านไว้ต่อ execution และ "ล้างทิ้งทันทีทุกครั้งที่มีการเขียน" รวมถึงล้างซ้ำ
++ * เมื่อเข้า critical section ใน pcWithScriptLock_ ความสดของข้อมูลจึงเท่าเดิมทุกกรณี
++ */
+ function pcListObjects_(sheetName) {
++  return pcMemo_('rows:' + sheetName, function() {
++    return pcReadObjects_(sheetName);
++  });
++}
++
++/** Performs the actual batch read of a workflow sheet. */
++function pcReadObjects_(sheetName) {
+   var sheet = pcSheet_(sheetName);
+   var headers = PC_HEADERS[sheetName];
+   var lastRow = sheet.getLastRow();
+@@ -36,6 +65,16 @@
+   return values.map(function(row, index){ return pcRowToObject_(headers, row, index + 2); });
+ }
+ 
++/** Invalidates the cached row snapshot of one workflow sheet after any write. */
++function pcInvalidateRows_(sheetName) {
++  pcMemoDrop_('rows:' + sheetName);
++}
++
++/** Invalidates every cached row snapshot. Called whenever a critical section begins. */
++function pcInvalidateAllRows_() {
++  pcMemoDropPrefix_('rows:');
++}
++
+ /** Finds the first workflow object matching a field value. */
+ function pcFindObject_(sheetName, fieldName, value, caseInsensitive) {
+   var rows = pcListObjects_(sheetName);
+@@ -59,6 +98,7 @@
+   var row = headers.map(function(header){ return object[header] == null ? '' : object[header]; });
+   var nextRow = Math.max(2, sheet.getLastRow() + 1);
+   sheet.getRange(nextRow, 1, 1, headers.length).setValues([row]);
++  pcInvalidateRows_(sheetName); // [PERF PATCH v2.1.1]
+   return pcRowToObject_(headers, row, nextRow);
+ }
+ 
+@@ -70,6 +110,7 @@
+   var values = objects.map(function(object){ return headers.map(function(header){ return object[header] == null ? '' : object[header]; }); });
+   var startRow = Math.max(2, sheet.getLastRow() + 1);
+   sheet.getRange(startRow, 1, values.length, headers.length).setValues(values);
++  pcInvalidateRows_(sheetName); // [PERF PATCH v2.1.1]
+   return values.map(function(row, idx){ return pcRowToObject_(headers, row, startRow + idx); });
+ }
+ 
+@@ -83,6 +124,7 @@
+     if (Object.prototype.hasOwnProperty.call(patch, header)) row[index] = patch[header] == null ? '' : patch[header];
+   });
+   sheet.getRange(rowNumber, 1, 1, headers.length).setValues([row]);
++  pcInvalidateRows_(sheetName); // [PERF PATCH v2.1.1]
+   return pcRowToObject_(headers, row, rowNumber);
+ }
+ 
+@@ -106,6 +148,7 @@
+     });
+   });
+   sheet.getRange(minRow, 1, matrix.length, headers.length).setValues(matrix);
++  pcInvalidateRows_(sheetName); // [PERF PATCH v2.1.1]
+ }
+ 
+ /** Returns submission by its primary id. */
+diff -ru --label เดิม --label แก้ไขแล้ว "\340\271\200\340\270\224\340\270\264\340\270\241" "\340\271\201\340\270\201\340\271\211\340\271\204\340\270\202\340\271\201\340\270\245\340\271\211\340\270\247"
+--- เดิม
++++ แก้ไขแล้ว
+@@ -1,4 +1,4 @@
+-<!DOCTYPE html><html lang="th"><head><base target="_top"><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ศูนย์สารสนเทศกลาง</title><?!= include_('SharedStyles'); ?><style>.review-shell{display:grid;grid-template-columns:minmax(0,64%) minmax(360px,36%);height:calc(100vh - 62px)}.pdf-pane{background:#eef2f7;padding:10px}.pdf-pane iframe{width:100%;height:100%;border:0;background:#fff}.review-pane{overflow:auto;padding:14px;background:#fff;border-left:1px solid var(--border)}.review-item{border:1px solid var(--border);border-radius:12px;padding:12px;margin:10px 0}.review-item.prevfix{border-color:#f59e0b;background:#fffbeb}.prior-feedback{margin-top:10px;padding:10px;border:1px solid #f59e0b;border-radius:10px;background:#fff7ed}.review-section{margin:16px 0 8px;padding:10px 12px;border-radius:10px;background:#eef6ff;border-left:4px solid var(--primary);font-weight:800}.review-item.subitem{margin-left:16px;border-left-width:3px}.review-item .item-number{font-weight:800}.checklist-summary{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0 12px}.checklist-summary .status{font-size:12px}.checklist-summary.bottom{margin:14px 0 8px;padding:10px 12px;border:1px solid var(--border);border-radius:10px;background:#f8fafc;align-items:center}.completion-footer{position:sticky;bottom:8px;z-index:30;margin:10px 0 14px;box-shadow:0 8px 24px rgba(15,23,42,.12)}.prior-feedback .prior-title{font-weight:700;color:#9a3412}.result-buttons{display:flex;gap:6px;flex-wrap:wrap}.result-buttons button.active{outline:3px solid rgba(21,101,192,.25)}.tabbar{display:flex;gap:6px;border-bottom:1px solid var(--border);margin-bottom:12px}.tabbar button{border:0;background:transparent;padding:10px;font-weight:700;cursor:pointer}.tabbar button.active{border-bottom:3px solid var(--primary);color:var(--primary)}@media(max-width:1279px){.review-shell{display:block;height:auto}.pdf-pane,.review-pane{display:none}.review-shell.show-pdf .pdf-pane,.review-shell.show-review .review-pane{display:block;height:calc(100vh - 115px)}.mobile-tabs{display:flex!important}}@media(min-width:1280px){.mobile-tabs{display:none!important}}</style></head><body>
++<!DOCTYPE html><html lang="th"><head><base target="_top"><script>window.__PC_BASE_URL=<?!= pcBaseUrlLiteral_() ?>;</script><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ศูนย์สารสนเทศกลาง</title><?!= include_('SharedStyles'); ?><style>.review-shell{display:grid;grid-template-columns:minmax(0,64%) minmax(360px,36%);height:calc(100vh - 62px)}.pdf-pane{background:#eef2f7;padding:10px}.pdf-pane iframe{width:100%;height:100%;border:0;background:#fff}.review-pane{overflow:auto;padding:14px;background:#fff;border-left:1px solid var(--border)}.review-item{border:1px solid var(--border);border-radius:12px;padding:12px;margin:10px 0}.review-item.prevfix{border-color:#f59e0b;background:#fffbeb}.prior-feedback{margin-top:10px;padding:10px;border:1px solid #f59e0b;border-radius:10px;background:#fff7ed}.review-section{margin:16px 0 8px;padding:10px 12px;border-radius:10px;background:#eef6ff;border-left:4px solid var(--primary);font-weight:800}.review-item.subitem{margin-left:16px;border-left-width:3px}.review-item .item-number{font-weight:800}.checklist-summary{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0 12px}.checklist-summary .status{font-size:12px}.checklist-summary.bottom{margin:14px 0 8px;padding:10px 12px;border:1px solid var(--border);border-radius:10px;background:#f8fafc;align-items:center}.completion-footer{position:sticky;bottom:8px;z-index:30;margin:10px 0 14px;box-shadow:0 8px 24px rgba(15,23,42,.12)}.prior-feedback .prior-title{font-weight:700;color:#9a3412}.result-buttons{display:flex;gap:6px;flex-wrap:wrap}.result-buttons button.active{outline:3px solid rgba(21,101,192,.25)}.tabbar{display:flex;gap:6px;border-bottom:1px solid var(--border);margin-bottom:12px}.tabbar button{border:0;background:transparent;padding:10px;font-weight:700;cursor:pointer}.tabbar button.active{border-bottom:3px solid var(--primary);color:var(--primary)}@media(max-width:1279px){.review-shell{display:block;height:auto}.pdf-pane,.review-pane{display:none}.review-shell.show-pdf .pdf-pane,.review-shell.show-review .review-pane{display:block;height:calc(100vh - 115px)}.mobile-tabs{display:flex!important}}@media(min-width:1280px){.mobile-tabs{display:none!important}}</style></head><body>
+ <div class="top"><div class="brand">ศูนย์สารสนเทศกลาง</div><span id="title" class="muted">ตรวจรายงาน</span><div class="spacer"></div><span id="saveState" class="save-state"></span><button id="openPdf" class="btn btn-secondary">เปิด PDF ในแท็บใหม่</button><button class="btn btn-secondary" onclick="nav('PrecheckOfficer')">กลับคิว</button></div>
+ <div class="mobile-tabs actions" style="padding:8px 12px;background:#fff"><button class="btn btn-secondary" onclick="mobileTab('pdf')">PDF</button><button class="btn btn-secondary" onclick="mobileTab('review')">Checklist</button></div>
+ <div id="shell" class="review-shell show-review"><div class="pdf-pane"><iframe id="pdfFrame" title="PDF Viewer"></iframe></div><div class="review-pane"><div id="completionNotice" class="notice success hidden" style="margin-bottom:10px"></div><div id="lockNotice" class="notice hidden"></div><div id="takeoverBox" class="actions hidden" style="margin:8px 0"><button class="btn btn-danger" onclick="takeover()">Admin รับช่วงการตรวจ</button></div><div class="tabbar"><button id="tabChecklist" class="active" onclick="showTab('checklist')">Checklist</button><button id="tabData" onclick="showTab('data')">ข้อมูลรายงาน</button><button id="tabHistory" onclick="showTab('history')">ประวัติ</button></div>
+diff -ru --label เดิม --label แก้ไขแล้ว "\340\271\200\340\270\224\340\270\264\340\270\241" "\340\271\201\340\270\201\340\271\211\340\271\204\340\270\202\340\271\201\340\270\245\340\271\211\340\270\247"
+--- เดิม
++++ แก้ไขแล้ว
+@@ -1 +1 @@
+-<!DOCTYPE html><html lang="th"><head><base target="_top"><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ศูนย์สารสนเทศกลาง</title><?!= include_('SharedStyles'); ?></head><body><div class="container"><div class="card"><h2>ศูนย์สารสนเทศกลาง</h2><p>การส่งรายงานใช้หน้าส่งเอกสารแบบรวม เพื่อให้ระบบตรวจประเภทเอกสารจากทะเบียนโดยอัตโนมัติ</p><button class="btn btn-primary" onclick="nav('SubmitDocument')">ไปหน้าส่งเอกสาร</button></div></div><?!= include_('SharedScripts'); ?></body></html>
++<!DOCTYPE html><html lang="th"><head><base target="_top"><script>window.__PC_BASE_URL=<?!= pcBaseUrlLiteral_() ?>;</script><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ศูนย์สารสนเทศกลาง</title><?!= include_('SharedStyles'); ?></head><body><div class="container"><div class="card"><h2>ศูนย์สารสนเทศกลาง</h2><p>การส่งรายงานใช้หน้าส่งเอกสารแบบรวม เพื่อให้ระบบตรวจประเภทเอกสารจากทะเบียนโดยอัตโนมัติ</p><button class="btn btn-primary" onclick="nav('SubmitDocument')">ไปหน้าส่งเอกสาร</button></div></div><?!= include_('SharedScripts'); ?></body></html>
+diff -ru --label เดิม --label แก้ไขแล้ว "\340\271\200\340\270\224\340\270\264\340\270\241" "\340\271\201\340\270\201\340\271\211\340\271\204\340\270\202\340\271\201\340\270\245\340\271\211\340\270\247"
+--- เดิม
++++ แก้ไขแล้ว
+@@ -1,5 +1,5 @@
+ <script>
+-let __pcBusyCount=0,__pcBusyTimer=null,__pcNavBusy=false,__pcNavBusySince=0;
++let __pcBusyCount=0,__pcBusyTimer=null,__pcNavBusy=false,__pcNavBusySince=0,__pcNavLeaving=false;
+ function __pcBusyLabel(name){const m={getAppNavigationUrl:'กำลังเปิดหน้า...',openReview:'กำลังเปิดเอกสาร...',getOfficerDashboard:'กำลังโหลดคิว...',getMyDocuments:'กำลังโหลดรายการ...',getMyDocumentDetail:'กำลังโหลดรายละเอียด...',lookupDocument:'กำลังค้นหาเอกสาร...',saveSubmissionDraft:'กำลังบันทึกร่าง...',saveReviewDraft:'กำลังบันทึกผลตรวจ...',completeReview:'กำลังสรุปผลการตรวจ...',beginChunkUpload:'กำลังเตรียมอัปโหลด...',finalizeUpload:'กำลังตรวจสอบไฟล์...',submitPrecheck:'กำลังส่งรายงาน...'};return m[name]||'กำลังดำเนินการ...'}
+ function __pcShowBusy(label){let el=qs('globalBusy');if(!el){el=document.createElement('div');el.id='globalBusy';el.className='global-busy hidden';el.innerHTML='<span class="spinner"></span><span id="globalBusyText"></span>';document.body.appendChild(el)}const t=qs('globalBusyText');if(t)t.textContent=label||'กำลังดำเนินการ...';el.classList.remove('hidden')}
+ function __pcBeginBusy(label){__pcBusyCount++;if(__pcBusyTimer)return;__pcBusyTimer=setTimeout(()=>{__pcBusyTimer=null;if(__pcBusyCount>0)__pcShowBusy(label)},250)}
+@@ -12,8 +12,39 @@
+ function showError(message,duration=6000){showToast(message,'error',duration)}
+ function setSaveState(elOrId,message,state){const el=typeof elOrId==='string'?qs(elOrId):elOrId;if(!el)return;el.textContent=message||'';el.className='save-state '+(state||'')}
+ function __pcReleaseNavLock(message){__pcNavBusy=false;__pcNavBusySince=0;const el=qs('globalBusy');if(el)el.classList.add('hidden');if(message)showToast(message,'info',5500)}
+-function __pcNavigateTop(url){const a=document.createElement('a');a.href=url;a.target='_top';a.rel='noopener';a.style.display='none';document.body.appendChild(a);a.click();setTimeout(()=>{if(a.parentNode)a.remove()},1000)}
+-async function nav(page,params={},options={}){if(__pcNavBusy){if(__pcNavBusySince&&Date.now()-__pcNavBusySince>1200)__pcReleaseNavLock();else return false}__pcNavBusy=true;__pcNavBusySince=Date.now();try{const url=await server('getAppNavigationUrl',page,params);__pcShowBusy(options.label||'กำลังเปิดหน้า...');__pcNavigateTop(url);setTimeout(()=>{if(__pcNavBusy)__pcReleaseNavLock()},900);return true}catch(e){__pcReleaseNavLock();showError(e.message);return false}}
++
++/* =====================================================================
++   [NAV PATCH v2.1.1] การเปลี่ยนหน้าเมนู
++   ปัญหาเดิม: ต้องเรียกเซิร์ฟเวอร์เพื่อ "ขอ URL" ก่อนทุกครั้ง ทำให้
++     (1) ช้าโดยไม่จำเป็น เพราะ URL คำนวณได้ตั้งแต่ตอน render หน้า
++     (2) เมื่อเซิร์ฟเวอร์ตอบช้าเกิน ~5 วินาที เบราว์เซอร์จะถือว่า
++         "user activation" หมดอายุ และบล็อกการเปลี่ยนหน้าระดับบนสุดแบบเงียบ ๆ
++         (iframe ของ Apps Script ตั้ง sandbox เป็น allow-top-navigation-BY-USER-ACTIVATION)
++         ผู้ใช้จึงเห็นว่า "กดปุ่มแล้วไม่ไปไหน"
++   วิธีแก้: สร้าง URL ที่ฝั่งหน้าเว็บทันทีจาก baseUrl ที่เซิร์ฟเวอร์ฝังมากับหน้า
++     จึงเปลี่ยนหน้าได้ภายในจังหวะที่ผู้ใช้กดปุ่มจริง ๆ (ไม่มี round-trip คั่น)
++   ความปลอดภัยไม่ลดลง: doGet() ยังตรวจ allowlist ของหน้า + session + บทบาท
++     ทุกครั้งที่เปิดหน้าเหมือนเดิมทุกประการ ฝั่งหน้าเว็บทำได้แค่ "ประกอบลิงก์"
++   ===================================================================== */
++const __PC_NAV_PAGES=['Index','SubmitDocument','MyDocuments','PrecheckSubmit','PrecheckDetail','PrecheckOfficer','PrecheckReview','PrecheckAdmin'];
++function __pcBaseUrl(){try{return String(window.__PC_BASE_URL||'')}catch(e){return''}}
++function __pcBuildUrl(page,params){const base=__pcBaseUrl();page=String(page||'');if(!base||__PC_NAV_PAGES.indexOf(page)===-1)return'';let url=base+'?page='+encodeURIComponent(page);Object.keys(params||{}).forEach(k=>{if(!/^[A-Za-z0-9_]+$/.test(k))return;url+='&'+encodeURIComponent(k)+'='+encodeURIComponent(String(params[k]))});return url}
++window.addEventListener('pagehide',()=>{__pcNavLeaving=true});
++window.addEventListener('beforeunload',()=>{__pcNavLeaving=true});
++function __pcNavigateTop(url){try{if(window.top&&window.top.location){window.top.location.href=url;return}}catch(e){}try{window.open(url,'_top');return}catch(e){}const a=document.createElement('a');a.href=url;a.target='_top';a.rel='noopener';a.style.display='none';document.body.appendChild(a);a.click();setTimeout(()=>{if(a.parentNode)a.remove()},1000)}
++function __pcManualNavNotice(url){if(__pcNavLeaving)return;const old=qs('globalToast');if(old)old.remove();const el=document.createElement('div');el.id='globalToast';el.className='toast warn';el.innerHTML='ยังเปิดหน้าถัดไปไม่สำเร็จ <a href="'+esc(url)+'" target="_top" rel="noopener" style="color:#fff;text-decoration:underline;font-weight:800">กดที่นี่เพื่อไปต่อ</a>';document.body.appendChild(el);setTimeout(()=>{if(el&&el.parentNode)el.remove()},20000)}
++function __pcNavWatchdog(url){setTimeout(()=>{if(__pcNavLeaving)return;__pcReleaseNavLock();__pcManualNavNotice(url)},4000)}
++async function nav(page,params={},options={}){
++  const direct=__pcBuildUrl(page,params);
++  if(direct){__pcNavBusy=true;__pcNavBusySince=Date.now();__pcShowBusy(options.label||'กำลังเปิดหน้า...');__pcNavigateTop(direct);__pcNavWatchdog(direct);return true}
++  return __pcNavViaServer(page,params,options);
++}
++async function __pcNavViaServer(page,params,options){
++  if(__pcNavBusy){if(__pcNavBusySince&&Date.now()-__pcNavBusySince>1200)__pcReleaseNavLock();else return false}
++  __pcNavBusy=true;__pcNavBusySince=Date.now();
++  try{const url=await server('getAppNavigationUrl',page,params);__pcShowBusy((options&&options.label)||'กำลังเปิดหน้า...');__pcNavigateTop(url);__pcNavWatchdog(url);return true}
++  catch(e){__pcReleaseNavLock();showError(e.message);return false}
++}
+ function statusClass(s){return /COMMITTED|APPROVED$|PASS/.test(s)?'ok':/REVISION|FAILED|FIX/.test(s)?'danger':/WAITING|UPLOADING|IN_REVIEW|PENDING/.test(s)?'warn':''}
+ function thDate(v){if(!v)return'-';try{return new Date(v).toLocaleString('th-TH',{dateStyle:'medium',timeStyle:'short'})}catch(e){return v}}
+ </script>
+diff -ru --label เดิม --label แก้ไขแล้ว "\340\271\200\340\270\224\340\270\264\340\270\241" "\340\271\201\340\270\201\340\271\211\340\271\204\340\270\202\340\271\201\340\270\245\340\271\211\340\270\247"
+--- เดิม
++++ แก้ไขแล้ว
+@@ -1,4 +1,4 @@
+-<!DOCTYPE html><html lang="th"><head><base target="_top"><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ศูนย์สารสนเทศกลาง</title><?!= include_('SharedStyles'); ?></head><body>
++<!DOCTYPE html><html lang="th"><head><base target="_top"><script>window.__PC_BASE_URL=<?!= pcBaseUrlLiteral_() ?>;</script><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ศูนย์สารสนเทศกลาง</title><?!= include_('SharedStyles'); ?></head><body>
+ <div class="top"><div class="brand">ศูนย์สารสนเทศกลาง</div><span class="muted">ส่งเอกสาร</span><div class="spacer"></div><button class="btn btn-secondary" onclick="nav('MyDocuments')">รายการเอกสารของฉัน</button><button class="btn btn-secondary" onclick="nav('Index')">หน้าหลัก</button></div>
+ <div class="container">
+   <div class="card"><h2 style="margin-top:0">ส่งเอกสาร</h2><p class="muted">กรอกหมายเลขเอกสารเพียงครั้งเดียว ระบบจะดึงข้อมูลทะเบียนและเลือก Workflow ให้อัตโนมัติ</p><div class="actions"><div class="field" style="flex:1;min-width:250px"><label for="docNo">หมายเลขเอกสาร</label><input id="docNo" autocomplete="off" placeholder="เช่น บว 123/2569"></div><button id="lookupBtn" class="btn btn-primary" onclick="lookup()">ตรวจสอบ</button></div><div id="lookupState" class="muted" style="margin-top:10px"></div></div>
+diff -ru --label เดิม --label แก้ไขแล้ว "\340\271\200\340\270\224\340\270\264\340\270\241" "\340\271\201\340\270\201\340\271\211\340\271\204\340\270\202\340\271\201\340\270\245\340\271\211\340\270\247"
+--- เดิม
++++ แก้ไขแล้ว
+@@ -76,6 +76,9 @@
+     throw pcUserError_('ระบบกำลังประมวลผลคำขออื่น กรุณาลองใหม่อีกครั้ง', 'LOCK_BUSY');
+   }
+   try {
++    // [PERF PATCH v2.1.1] ล้าง snapshot ที่แคชไว้ก่อนเข้า critical section
++    // เพื่อบังคับให้อ่านข้อมูลสดหลังได้ Lock เสมอ (ความถูกต้องเท่าเดิมทุกประการ)
++    pcInvalidateAllRows_();
+     return fn();
+   } finally {
+     lock.releaseLock();
+Only in out/bap-adam-commit-gs-v2: รหัส.gs

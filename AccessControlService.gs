@@ -1,6 +1,19 @@
-/** Resolves the authenticated principal from the existing session and Workspace identity. */
+/**
+ * Resolves the authenticated principal from the existing session and Workspace identity.
+ * [PERF PATCH v2.1.1] ฟังก์ชันนี้ถูกเรียกซ้ำ 2-5 ครั้งต่อ 1 คำขอ และแต่ละครั้งอ่านชีต
+ * Credential ทั้งใบใหม่ จึงจำผลไว้ต่อ execution โดย "ผูกกับ userKeyHash ของผู้ใช้"
+ * ถ้าเป็นคนละคนจะคำนวณใหม่เสมอ ไม่มีทางได้สิทธิ์ข้ามผู้ใช้
+ */
 function getCurrentPrincipal_() {
   var session = requireAuth_('principal');
+  var identity = String(session.userKeyHash || '') + '|' + String(session.username || '');
+  return pcMemoScoped_('principal', identity, function() {
+    return pcBuildCurrentPrincipal_(session);
+  });
+}
+
+/** Builds the principal from a validated session. Behaviour identical to the original. */
+function pcBuildCurrentPrincipal_(session) {
   var activeEmail = '';
   try { activeEmail = String(Session.getActiveUser().getEmail() || '').trim(); } catch (e) { activeEmail = ''; }
   var credentialEmail = pcCredentialEmailForUsername_(session.username);

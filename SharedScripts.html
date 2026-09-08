@@ -1,5 +1,5 @@
 <script>
-let __pcBusyCount=0,__pcBusyTimer=null,__pcNavBusy=false,__pcNavBusySince=0;
+let __pcBusyCount=0,__pcBusyTimer=null,__pcNavBusy=false,__pcNavBusySince=0,__pcNavLeaving=false;
 function __pcBusyLabel(name){const m={getAppNavigationUrl:'กำลังเปิดหน้า...',openReview:'กำลังเปิดเอกสาร...',getOfficerDashboard:'กำลังโหลดคิว...',getMyDocuments:'กำลังโหลดรายการ...',getMyDocumentDetail:'กำลังโหลดรายละเอียด...',lookupDocument:'กำลังค้นหาเอกสาร...',saveSubmissionDraft:'กำลังบันทึกร่าง...',saveReviewDraft:'กำลังบันทึกผลตรวจ...',completeReview:'กำลังสรุปผลการตรวจ...',beginChunkUpload:'กำลังเตรียมอัปโหลด...',finalizeUpload:'กำลังตรวจสอบไฟล์...',submitPrecheck:'กำลังส่งรายงาน...'};return m[name]||'กำลังดำเนินการ...'}
 function __pcShowBusy(label){let el=qs('globalBusy');if(!el){el=document.createElement('div');el.id='globalBusy';el.className='global-busy hidden';el.innerHTML='<span class="spinner"></span><span id="globalBusyText"></span>';document.body.appendChild(el)}const t=qs('globalBusyText');if(t)t.textContent=label||'กำลังดำเนินการ...';el.classList.remove('hidden')}
 function __pcBeginBusy(label){__pcBusyCount++;if(__pcBusyTimer)return;__pcBusyTimer=setTimeout(()=>{__pcBusyTimer=null;if(__pcBusyCount>0)__pcShowBusy(label)},250)}
@@ -12,8 +12,39 @@ function showSuccess(message,duration=5000){showToast(message,'success',duration
 function showError(message,duration=6000){showToast(message,'error',duration)}
 function setSaveState(elOrId,message,state){const el=typeof elOrId==='string'?qs(elOrId):elOrId;if(!el)return;el.textContent=message||'';el.className='save-state '+(state||'')}
 function __pcReleaseNavLock(message){__pcNavBusy=false;__pcNavBusySince=0;const el=qs('globalBusy');if(el)el.classList.add('hidden');if(message)showToast(message,'info',5500)}
-function __pcNavigateTop(url){const a=document.createElement('a');a.href=url;a.target='_top';a.rel='noopener';a.style.display='none';document.body.appendChild(a);a.click();setTimeout(()=>{if(a.parentNode)a.remove()},1000)}
-async function nav(page,params={},options={}){if(__pcNavBusy){if(__pcNavBusySince&&Date.now()-__pcNavBusySince>1200)__pcReleaseNavLock();else return false}__pcNavBusy=true;__pcNavBusySince=Date.now();try{const url=await server('getAppNavigationUrl',page,params);__pcShowBusy(options.label||'กำลังเปิดหน้า...');__pcNavigateTop(url);setTimeout(()=>{if(__pcNavBusy)__pcReleaseNavLock()},900);return true}catch(e){__pcReleaseNavLock();showError(e.message);return false}}
+
+/* =====================================================================
+   [NAV PATCH v2.1.1] การเปลี่ยนหน้าเมนู
+   ปัญหาเดิม: ต้องเรียกเซิร์ฟเวอร์เพื่อ "ขอ URL" ก่อนทุกครั้ง ทำให้
+     (1) ช้าโดยไม่จำเป็น เพราะ URL คำนวณได้ตั้งแต่ตอน render หน้า
+     (2) เมื่อเซิร์ฟเวอร์ตอบช้าเกิน ~5 วินาที เบราว์เซอร์จะถือว่า
+         "user activation" หมดอายุ และบล็อกการเปลี่ยนหน้าระดับบนสุดแบบเงียบ ๆ
+         (iframe ของ Apps Script ตั้ง sandbox เป็น allow-top-navigation-BY-USER-ACTIVATION)
+         ผู้ใช้จึงเห็นว่า "กดปุ่มแล้วไม่ไปไหน"
+   วิธีแก้: สร้าง URL ที่ฝั่งหน้าเว็บทันทีจาก baseUrl ที่เซิร์ฟเวอร์ฝังมากับหน้า
+     จึงเปลี่ยนหน้าได้ภายในจังหวะที่ผู้ใช้กดปุ่มจริง ๆ (ไม่มี round-trip คั่น)
+   ความปลอดภัยไม่ลดลง: doGet() ยังตรวจ allowlist ของหน้า + session + บทบาท
+     ทุกครั้งที่เปิดหน้าเหมือนเดิมทุกประการ ฝั่งหน้าเว็บทำได้แค่ "ประกอบลิงก์"
+   ===================================================================== */
+const __PC_NAV_PAGES=['Index','SubmitDocument','MyDocuments','PrecheckSubmit','PrecheckDetail','PrecheckOfficer','PrecheckReview','PrecheckAdmin'];
+function __pcBaseUrl(){try{return String(window.__PC_BASE_URL||'')}catch(e){return''}}
+function __pcBuildUrl(page,params){const base=__pcBaseUrl();page=String(page||'');if(!base||__PC_NAV_PAGES.indexOf(page)===-1)return'';let url=base+'?page='+encodeURIComponent(page);Object.keys(params||{}).forEach(k=>{if(!/^[A-Za-z0-9_]+$/.test(k))return;url+='&'+encodeURIComponent(k)+'='+encodeURIComponent(String(params[k]))});return url}
+window.addEventListener('pagehide',()=>{__pcNavLeaving=true});
+window.addEventListener('beforeunload',()=>{__pcNavLeaving=true});
+function __pcNavigateTop(url){try{if(window.top&&window.top.location){window.top.location.href=url;return}}catch(e){}try{window.open(url,'_top');return}catch(e){}const a=document.createElement('a');a.href=url;a.target='_top';a.rel='noopener';a.style.display='none';document.body.appendChild(a);a.click();setTimeout(()=>{if(a.parentNode)a.remove()},1000)}
+function __pcManualNavNotice(url){if(__pcNavLeaving)return;const old=qs('globalToast');if(old)old.remove();const el=document.createElement('div');el.id='globalToast';el.className='toast warn';el.innerHTML='ยังเปิดหน้าถัดไปไม่สำเร็จ <a href="'+esc(url)+'" target="_top" rel="noopener" style="color:#fff;text-decoration:underline;font-weight:800">กดที่นี่เพื่อไปต่อ</a>';document.body.appendChild(el);setTimeout(()=>{if(el&&el.parentNode)el.remove()},20000)}
+function __pcNavWatchdog(url){setTimeout(()=>{if(__pcNavLeaving)return;__pcReleaseNavLock();__pcManualNavNotice(url)},4000)}
+async function nav(page,params={},options={}){
+  const direct=__pcBuildUrl(page,params);
+  if(direct){__pcNavBusy=true;__pcNavBusySince=Date.now();__pcShowBusy(options.label||'กำลังเปิดหน้า...');__pcNavigateTop(direct);__pcNavWatchdog(direct);return true}
+  return __pcNavViaServer(page,params,options);
+}
+async function __pcNavViaServer(page,params,options){
+  if(__pcNavBusy){if(__pcNavBusySince&&Date.now()-__pcNavBusySince>1200)__pcReleaseNavLock();else return false}
+  __pcNavBusy=true;__pcNavBusySince=Date.now();
+  try{const url=await server('getAppNavigationUrl',page,params);__pcShowBusy((options&&options.label)||'กำลังเปิดหน้า...');__pcNavigateTop(url);__pcNavWatchdog(url);return true}
+  catch(e){__pcReleaseNavLock();showError(e.message);return false}
+}
 function statusClass(s){return /COMMITTED|APPROVED$|PASS/.test(s)?'ok':/REVISION|FAILED|FIX/.test(s)?'danger':/WAITING|UPLOADING|IN_REVIEW|PENDING/.test(s)?'warn':''}
 function thDate(v){if(!v)return'-';try{return new Date(v).toLocaleString('th-TH',{dateStyle:'medium',timeStyle:'short'})}catch(e){return v}}
 </script>

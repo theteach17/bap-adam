@@ -76,6 +76,9 @@ function pcWithScriptLock_(fn, timeoutMs) {
     throw pcUserError_('ระบบกำลังประมวลผลคำขออื่น กรุณาลองใหม่อีกครั้ง', 'LOCK_BUSY');
   }
   try {
+    // [PERF PATCH v2.1.1] ล้าง snapshot ที่แคชไว้ก่อนเข้า critical section
+    // เพื่อบังคับให้อ่านข้อมูลสดหลังได้ Lock เสมอ (ความถูกต้องเท่าเดิมทุกประการ)
+    pcInvalidateAllRows_();
     return fn();
   } finally {
     lock.releaseLock();

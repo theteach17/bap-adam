@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="th">
 <head>
-  <base target="_top">
+  <base target="_top"><script>window.__PC_BASE_URL=<?!= pcBaseUrlLiteral_() ?>;</script>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ศูนย์สารสนเทศกลาง</title>
@@ -923,12 +923,82 @@
       setInterval(updateClock, 1000);
     };
 
+    /* =====================================================================
+       [NAV PATCH v2.1.1] แก้อาการ "กดเมนูแล้วปุ่มไม่ทำงาน ต้องรีเฟรชก่อน"
+       สาเหตุเดิม 2 ข้อที่ทำงานร่วมกัน:
+         1) pageNavigationInFlight ถูกตั้งเป็น true แล้ว "ไม่เคยถูกคืนค่าในกรณีสำเร็จ"
+            ถ้าการเปลี่ยนหน้าไม่เกิดขึ้นจริง ตัวแปรนี้จะค้างเป็น true ตลอด
+            ปุ่มเมนูทุกปุ่มจึงตายทั้งหน้า จนกว่าจะรีเฟรช
+         2) window.open(url,'_top') ถูกเรียกใน callback หลังรอเซิร์ฟเวอร์
+            iframe ของ Apps Script ตั้ง sandbox เป็น
+            allow-top-navigation-by-user-activation เมื่อเซิร์ฟเวอร์ตอบช้า
+            เกินอายุ user activation เบราว์เซอร์จะบล็อกการเปลี่ยนหน้าแบบเงียบ ๆ
+            และ Swal loading (allowOutsideClick:false) ก็ค้างคาหน้าจอ
+            ผู้ใช้จึงเห็นเป็น "โหลดนานผิดปกติ" หรือ "กดแล้วไม่ไปไหน"
+       วิธีแก้: ประกอบ URL ที่ฝั่งหน้าเว็บทันที (ไม่มี round-trip คั่น)
+       จึงเปลี่ยนหน้าได้ในจังหวะที่ผู้ใช้กดปุ่มจริง พร้อมมี watchdog คืนสถานะเสมอ
+       การตรวจสิทธิ์ยังอยู่ที่ doGet() ครบถ้วนเหมือนเดิมทุกประการ
+       ===================================================================== */
+    const PC_NAV_PAGES = ['Index','SubmitDocument','MyDocuments','PrecheckSubmit','PrecheckDetail','PrecheckOfficer','PrecheckReview','PrecheckAdmin'];
     let pageNavigationInFlight = false;
+    let pageNavigationLeaving = false;
+    window.addEventListener('pagehide', function(){ pageNavigationLeaving = true; });
+    window.addEventListener('beforeunload', function(){ pageNavigationLeaving = true; });
+
+    function pcBuildAppUrl(page, params) {
+      var base = '';
+      try { base = String(window.__PC_BASE_URL || ''); } catch (e) { base = ''; }
+      page = String(page || '');
+      if (!base || PC_NAV_PAGES.indexOf(page) === -1) return '';
+      var url = base + '?page=' + encodeURIComponent(page);
+      Object.keys(params || {}).forEach(function(k){
+        if (!/^[A-Za-z0-9_]+$/.test(k)) return;
+        url += '&' + encodeURIComponent(k) + '=' + encodeURIComponent(String(params[k]));
+      });
+      return url;
+    }
+
+    function pcNavigateTop(url) {
+      try { if (window.top && window.top.location) { window.top.location.href = url; return; } } catch (e) {}
+      try { window.open(url, '_top'); return; } catch (e) {}
+      var a = document.createElement('a');
+      a.href = url; a.target = '_top'; a.rel = 'noopener'; a.style.display = 'none';
+      document.body.appendChild(a); a.click();
+      setTimeout(function(){ if (a.parentNode) a.remove(); }, 1000);
+    }
+
+    // ถ้าเบราว์เซอร์บล็อกการเปลี่ยนหน้า ผู้ใช้ต้องไม่ค้างอยู่กับหน้าจอ loading
+    // และต้องกดเมนูอื่นต่อได้ทันทีโดยไม่ต้องรีเฟรช
+    function pcNavWatchdog(url) {
+      setTimeout(function(){
+        if (pageNavigationLeaving) return;
+        pageNavigationInFlight = false;
+        hideLoading();
+        Swal.fire({
+          icon: 'info',
+          title: 'ยังเปิดหน้าถัดไปไม่สำเร็จ',
+          html: 'กรุณากดปุ่มด้านล่างเพื่อไปต่อ<br><a href="' + url + '" target="_top" rel="noopener">เปิดหน้าที่ต้องการ</a>',
+          confirmButtonText: 'ปิด',
+          confirmButtonColor: '#d63031'
+        });
+      }, 4000);
+    }
+
     function goPage(page, params = {}) {
+      var direct = pcBuildAppUrl(page, params);
+      if (direct) {
+        pageNavigationInFlight = true;
+        showLoading('กำลังเปิดหน้า กรุณารอสักครู่...');
+        pcNavigateTop(direct);
+        pcNavWatchdog(direct);
+        return;
+      }
+      // ทางสำรอง: ใช้เส้นทางเดิมผ่านเซิร์ฟเวอร์ เผื่อยังไม่ได้รับ baseUrl
       if (pageNavigationInFlight) return;
       pageNavigationInFlight = true;
       showLoading('กำลังเปิดหน้า กรุณารอสักครู่...');
-      google.script.run.withSuccessHandler(function(url){ window.open(url, '_top'); })
+      google.script.run
+        .withSuccessHandler(function(url){ pageNavigationInFlight = false; pcNavigateTop(url); pcNavWatchdog(url); })
         .withFailureHandler(function(error){ pageNavigationInFlight = false; hideLoading(); onUploadFailed(error); })
         .getAppNavigationUrl(page, params);
     }
@@ -1003,9 +1073,12 @@
         }).then((result) => {
             if (result.isConfirmed) {
                 // เปลี่ยนจากการฮาร์ดโค้ด เป็นการเรียกฟังก์ชันดึง URL อัตโนมัติจากเซิร์ฟเวอร์
-                google.script.run.withSuccessHandler(function(url) {
-                    window.open(url, "_top");
-                }).getWebAppUrl();
+                // [NAV PATCH v2.1.1] ใช้ตัวช่วยเดียวกับเมนู เพื่อไม่ให้ค้างเมื่อเบราว์เซอร์บล็อกการเปลี่ยนหน้า
+                showLoading('กำลังออกจากระบบ...');
+                google.script.run
+                    .withSuccessHandler(function(url) { pcNavigateTop(url); pcNavWatchdog(url); })
+                    .withFailureHandler(function(){ hideLoading(); showToastFallbackLogout(); })
+                    .getWebAppUrl();
             }
         });
     }
@@ -2163,6 +2236,13 @@ function validateAndSaveReport() {
             formData.responsiblePerson, formData.reason, fileId, formData.actionPlanProject, formData.documentNumber, loggedUser 
           );
       }
+    }
+
+    function showToastFallbackLogout() {
+      var base = '';
+      try { base = String(window.__PC_BASE_URL || ''); } catch (e) { base = ''; }
+      if (base) { pcNavigateTop(base); return; }
+      Swal.fire({ icon: 'warning', title: 'ออกจากระบบไม่สำเร็จ', text: 'กรุณาปิดแท็บนี้ หรือลองใหม่อีกครั้ง', confirmButtonColor: '#d63031' });
     }
 
     function showLoading(message) {

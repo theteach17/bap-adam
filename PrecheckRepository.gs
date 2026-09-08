@@ -1,11 +1,27 @@
-/** Opens the isolated Pre-check workflow database. */
+/**
+ * Opens the isolated Pre-check workflow database.
+ * [PERF PATCH v2.1.1] เปิดสเปรดชีตเดิมซ้ำหลายสิบครั้งต่อคำขอ จึงจำ handle ไว้ 1 ครั้งต่อ execution
+ */
 function getPrecheckSpreadsheet_() {
   var cfg = requirePrecheckDbConfig_();
-  return SpreadsheetApp.openById(cfg.dbId);
+  return pcMemo_('ss:precheck:' + cfg.dbId, function() {
+    return SpreadsheetApp.openById(cfg.dbId);
+  });
 }
 
-/** Returns a workflow sheet and validates its exact header contract. */
+/**
+ * Returns a workflow sheet and validates its exact header contract.
+ * [PERF PATCH v2.1.1] การตรวจ header contract ยังทำครบเหมือนเดิม แต่ทำครั้งเดียวต่อ
+ * execution แทนที่จะยิงอ่านแถวหัวตารางใหม่ทุกครั้งที่เรียกใช้ชีต
+ */
 function pcSheet_(sheetName) {
+  return pcMemo_('sheet:' + sheetName, function() {
+    return pcOpenValidatedSheet_(sheetName);
+  });
+}
+
+/** Opens and header-validates a workflow sheet. Behaviour identical to the original pcSheet_. */
+function pcOpenValidatedSheet_(sheetName) {
   var ss = getPrecheckSpreadsheet_();
   var sheet = ss.getSheetByName(sheetName);
   if (!sheet) throw new Error('Missing workflow sheet: ' + sheetName);
@@ -26,14 +42,37 @@ function pcRowToObject_(headers, row, rowNumber) {
   return out;
 }
 
-/** Lists workflow sheet rows as objects using one batch read. */
+/**
+ * Lists workflow sheet rows as objects using one batch read.
+ * [PERF PATCH v2.1.1] เดิมหนึ่งคำขออ่านชีตเดิมซ้ำได้ถึง 4-5 รอบ (เช่น openReview อ่าน
+ * PC_Reviews 3 รอบ, getMyDocumentDetail อ่าน PC_ReviewResponses 1 รอบต่อ 1 review)
+ * จึงจำผลอ่านไว้ต่อ execution และ "ล้างทิ้งทันทีทุกครั้งที่มีการเขียน" รวมถึงล้างซ้ำ
+ * เมื่อเข้า critical section ใน pcWithScriptLock_ ความสดของข้อมูลจึงเท่าเดิมทุกกรณี
+ */
 function pcListObjects_(sheetName) {
+  return pcMemo_('rows:' + sheetName, function() {
+    return pcReadObjects_(sheetName);
+  });
+}
+
+/** Performs the actual batch read of a workflow sheet. */
+function pcReadObjects_(sheetName) {
   var sheet = pcSheet_(sheetName);
   var headers = PC_HEADERS[sheetName];
   var lastRow = sheet.getLastRow();
   if (lastRow < 2) return [];
   var values = sheet.getRange(2, 1, lastRow - 1, headers.length).getValues();
   return values.map(function(row, index){ return pcRowToObject_(headers, row, index + 2); });
+}
+
+/** Invalidates the cached row snapshot of one workflow sheet after any write. */
+function pcInvalidateRows_(sheetName) {
+  pcMemoDrop_('rows:' + sheetName);
+}
+
+/** Invalidates every cached row snapshot. Called whenever a critical section begins. */
+function pcInvalidateAllRows_() {
+  pcMemoDropPrefix_('rows:');
 }
 
 /** Finds the first workflow object matching a field value. */
@@ -59,6 +98,7 @@ function pcAppendObject_(sheetName, object) {
   var row = headers.map(function(header){ return object[header] == null ? '' : object[header]; });
   var nextRow = Math.max(2, sheet.getLastRow() + 1);
   sheet.getRange(nextRow, 1, 1, headers.length).setValues([row]);
+  pcInvalidateRows_(sheetName); // [PERF PATCH v2.1.1]
   return pcRowToObject_(headers, row, nextRow);
 }
 
@@ -70,6 +110,7 @@ function pcAppendObjects_(sheetName, objects) {
   var values = objects.map(function(object){ return headers.map(function(header){ return object[header] == null ? '' : object[header]; }); });
   var startRow = Math.max(2, sheet.getLastRow() + 1);
   sheet.getRange(startRow, 1, values.length, headers.length).setValues(values);
+  pcInvalidateRows_(sheetName); // [PERF PATCH v2.1.1]
   return values.map(function(row, idx){ return pcRowToObject_(headers, row, startRow + idx); });
 }
 
@@ -83,6 +124,7 @@ function pcPatchObject_(sheetName, rowNumber, patch) {
     if (Object.prototype.hasOwnProperty.call(patch, header)) row[index] = patch[header] == null ? '' : patch[header];
   });
   sheet.getRange(rowNumber, 1, 1, headers.length).setValues([row]);
+  pcInvalidateRows_(sheetName); // [PERF PATCH v2.1.1]
   return pcRowToObject_(headers, row, rowNumber);
 }
 
@@ -106,6 +148,7 @@ function pcBatchPatchObjects_(sheetName, patches) {
     });
   });
   sheet.getRange(minRow, 1, matrix.length, headers.length).setValues(matrix);
+  pcInvalidateRows_(sheetName); // [PERF PATCH v2.1.1]
 }
 
 /** Returns submission by its primary id. */

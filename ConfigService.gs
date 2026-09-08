@@ -4,8 +4,18 @@ function pcConfig_(key, fallback) {
   return value == null || value === '' ? fallback : value;
 }
 
-/** Returns effective configuration with safe defaults for non-secret operational values. */
+/**
+ * Returns effective configuration with safe defaults for non-secret operational values.
+ * [PERF PATCH v2.1.1] ค่าคอนฟิกชุดเดียวกันถูกอ่านซ้ำหลายสิบครั้งต่อ 1 คำขอ
+ * (ทุกครั้งที่เรียก pcSheet_ จะวิ่งมาอ่าน Script Properties ใหม่ 25 คีย์)
+ * จึงจำค่าไว้ 1 ชุดต่อ execution ค่าที่ได้เหมือนเดิมทุกประการ
+ */
 function getPrecheckConfig_() {
+  return pcMemo_('cfg:precheck', pcBuildPrecheckConfig_);
+}
+
+/** Builds the effective configuration from Script Properties. Behaviour identical to the original. */
+function pcBuildPrecheckConfig_() {
   return {
     enabled: pcBool_(pcConfig_('PC_ENABLED', 'false'), false),
     autoCommitEnabled: pcBool_(pcConfig_('PC_AUTO_COMMIT_ENABLED', 'false'), false),
@@ -141,6 +151,7 @@ function configurePrecheckSystem_(config) {
   var previewStaging=props.PC_STAGING_FOLDER_ID||pcConfig_('PC_STAGING_FOLDER_ID','');
   if (props.PC_STAGING_FOLDER_ID) pcDriveFolder_(props.PC_STAGING_FOLDER_ID,'Staging');
   PropertiesService.getScriptProperties().setProperties(props, false);
+  pcMemoReset_(); // [PERF PATCH v2.1.1] ล้างแคชคอนฟิกทันทีหลังเปลี่ยนค่า เพื่อไม่ให้ได้ค่าเก่า
   CacheService.getScriptCache().remove('PC_ACCESS_CACHE');
   var updated=getPrecheckConfig_();
   if(updated.officerGroupEmail&&updated.stagingFolderId){

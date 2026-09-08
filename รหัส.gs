@@ -46,12 +46,18 @@ var PROTECTED_PAGES = ['Index','SubmitDocument','MyDocuments','PrecheckSubmit','
 var DEFAULT_WEB_TITLE = 'ศูนย์สารสนเทศกลาง';
 var DEFAULT_LOGO_URL = 'https://img2.pic.in.th/pic/logofd3322a65d133ac4.png';
 
+/**
+ * [PERF PATCH v2.1.1] ฐานหลักถูกเปิดซ้ำหลายครั้งต่อ 1 คำขอ (session, credential,
+ * ReportNo, Settings ฯลฯ) จึงจำ handle ไว้ 1 ครั้งต่อ execution
+ */
 function getSpreadsheet_() {
   var key = scriptProp.getProperty('key');
   if (!key) {
     throw new Error('System Error: ยังไม่ได้ตั้งค่า Script Properties ชื่อ key กรุณารัน initialSetup() ก่อนใช้งาน');
   }
-  return SpreadsheetApp.openById(key);
+  return pcMemo_('ss:main:' + key, function() {
+    return SpreadsheetApp.openById(key);
+  });
 }
 
 var reportNameMinDetailLength = 8;
@@ -433,10 +439,8 @@ function deactivateSessionsForUserKey_(sheet, userKeyHash, exceptRowNumber) {
     var rowNumber = index + 2;
     if (rowNumber === exceptRowNumber) return;
     if (row[1] === userKeyHash && parseBoolean_(row[7])) {
-      sheet.getRange(rowNumber, 8).setValue(false); // Active
-      sheet.getRange(rowNumber, 9).setValue(now);   // LogoutAt
-      sheet.getRange(rowNumber, 10).setValue('replaced_by_new_login');
-      sheet.getRange(rowNumber, 11).setValue(false);
+      // [PERF PATCH v2.1.1] เขียน 4 คอลัมน์ที่ติดกัน (H:K) ในครั้งเดียวแทน 4 ครั้ง
+      sheet.getRange(rowNumber, 8, 1, 4).setValues([[false, now, 'replaced_by_new_login', false]]);
     }
   });
 }
@@ -474,9 +478,17 @@ function createSession_(username, displayName) {
     lock.releaseLock();
   }
 
+  pcInvalidateSessionMemo_(); // [PERF PATCH v2.1.1] เข้าสู่ระบบใหม่ต้องอ่าน session ใหม่
   return sessionIdHash;
 }
 
+/**
+ * [PERF PATCH v2.1.1] เดิม 1 คำขอเรียก requireAuth_ ซ้ำ 2-4 ครั้ง และทุกครั้งอ่านชีต
+ * Sessions ทั้งใบใหม่ (ปัจจุบัน 225 แถว และโตขึ้นทุกครั้งที่มีคนล็อกอิน)
+ * จึงจำผลไว้ต่อ execution โดยผูกกับ userKeyHash และล้างทิ้งทันทีเมื่อมีการเขียน session
+ * ผลข้างเคียงเดียวคือคอลัมน์ LastAction จะบันทึก "ฟังก์ชันแรก" ของคำขอแทนฟังก์ชันสุดท้าย
+ * ซึ่งสื่อความหมายได้ตรงกว่าเดิม และ LastSeenAt ยังถูก throttle ที่ 5 นาทีเท่าเดิม
+ */
 function getActiveSession_(options) {
   options = options || {};
   var userKey;
@@ -485,8 +497,21 @@ function getActiveSession_(options) {
   } catch (e) {
     return { valid: false, reason: e.message };
   }
-
   var userKeyHash = hashString_(userKey);
+  return pcMemoScoped_('session', userKeyHash, function() {
+    return pcReadActiveSession_(userKeyHash, options);
+  });
+}
+
+/** Drops the memoized session after any write that changes session state. */
+function pcInvalidateSessionMemo_() {
+  pcMemoDrop_('session');
+  pcMemoDrop_('principal');
+}
+
+/** Reads and touches the active session row. Behaviour identical to the original getActiveSession_. */
+function pcReadActiveSession_(userKeyHash, options) {
+  options = options || {};
   var sheet = ensureSessionsSheet_();
   var lastRow = sheet.getLastRow();
   if (lastRow < 2) return { valid: false, reason: 'no_session' };
@@ -549,6 +574,7 @@ function invalidateCurrentSession_(reason) {
   session.sheet.getRange(session.rowNumber, 9).setValue(now);   // LogoutAt
   session.sheet.getRange(session.rowNumber, 10).setValue(reason || 'logout');
   session.sheet.getRange(session.rowNumber, 11).setValue(false);
+  pcInvalidateSessionMemo_(); // [PERF PATCH v2.1.1] ออกจากระบบแล้วต้องไม่เหลือ session เดิมในแคช
   return true;
 }
 
@@ -557,6 +583,7 @@ function consumeLoginRedirectIfNeeded_() {
   if (!session.valid || !session.sheet || !session.rowNumber) return false;
   if (session.loginRedirectPending) {
     session.sheet.getRange(session.rowNumber, 11).setValue(false);
+    pcInvalidateSessionMemo_(); // [PERF PATCH v2.1.1]
     return true;
   }
   return false;
@@ -566,6 +593,17 @@ function include_(filename) {
   return HtmlService.createHtmlOutputFromFile(filename).getContent();
 }
 
+/**
+ * [NAV PATCH v2.1.1] คืน URL ของเว็บแอปในรูป JS string literal สำหรับฝังลงหน้าเว็บ
+ * หน้าเว็บจึงสร้างลิงก์เมนูได้เองทันทีโดยไม่ต้องรอเรียกเซิร์ฟเวอร์ก่อนเปลี่ยนหน้า
+ * (การตรวจสิทธิ์ยังทำที่ doGet() ทุกครั้งเหมือนเดิม ค่านี้เป็นเพียง URL ฐานเท่านั้น)
+ */
+function pcBaseUrlLiteral_() {
+  return JSON.stringify(pcMemo_('nav:baseUrl', function() {
+    return ScriptApp.getService().getUrl();
+  }));
+}
+
 function renderPage_(page) {
   var settings = {};
   try { settings = getGlobalSettings_(); } catch (e) { Logger.log('Settings unavailable: ' + e.message); }
@@ -573,6 +611,9 @@ function renderPage_(page) {
   var template = HtmlService.createTemplateFromFile(page);
   template.appName = pcUserFacingTitle_();
   template.logoUrl = logoUrl;
+  // [NAV PATCH v2.1.1] ส่ง URL ของเว็บแอปไปกับหน้าเว็บตั้งแต่ตอน render
+  // หน้าเว็บจึงสร้างลิงก์เมนูได้ทันทีโดยไม่ต้องรอเรียกเซิร์ฟเวอร์ก่อนเปลี่ยนหน้า
+  template.baseUrl = ScriptApp.getService().getUrl();
   return template.evaluate()
     .setTitle(pcUserFacingTitle_())
     .setFaviconUrl(logoUrl)
@@ -805,6 +846,7 @@ function saveData(reportName, adminGroup, workGroup, responsiblePerson, actionPl
     var documentNumber = sheet.getRange(newRow, 2).getValue();
 
     pcInvalidateMasterDocumentCache_(documentNumber);
+    try { CacheService.getScriptCache().remove('PC_REPORT_COUNTS'); } catch (e) {} // [PERF PATCH v2.1.1]
     logActionInternal_(auditUser, 'ขอเลขทะเบียนเอกสาร', 'สำเร็จ', documentNumber);
     return documentNumber;
   } catch (e) {
@@ -1139,9 +1181,25 @@ function getDropdownData() {
 /**
  * Counts registered documents by administration group for the dashboard marquee.
  */
+/**
+ * [PERF PATCH v2.1.1] ตัวเลขบนแถบวิ่งหน้าแรกต้องอ่านชีต ReportNo ทั้งใบ (413 แถว)
+ * ทุกครั้งที่เปิดหน้าหลัก จึงแคชผลรวมไว้ 60 วินาที และล้างแคชทันทีที่ saveData()
+ * ออกเลขทะเบียนใหม่ ตัวเลขที่ผู้ใช้เห็นจึงตรงเสมอในทางปฏิบัติ
+ */
 function getReportCounts() {
   requireAuth_('getReportCounts');
+  var cache = CacheService.getScriptCache();
+  var cached = cache.get('PC_REPORT_COUNTS');
+  if (cached) {
+    try { return JSON.parse(cached); } catch (e) { /* อ่านแคชไม่ได้ ให้คำนวณใหม่ */ }
+  }
+  var counts = pcComputeReportCounts_();
+  try { cache.put('PC_REPORT_COUNTS', JSON.stringify(counts), 60); } catch (e) {}
+  return counts;
+}
 
+/** Computes registration counters. Behaviour identical to the original getReportCounts. */
+function pcComputeReportCounts_() {
   var spreadsheet = getSpreadsheet_();
   var sheet = spreadsheet.getSheetByName(sheetName);
   if (!sheet) {
@@ -1283,7 +1341,16 @@ function uploadChunk(uploadSessionId, chunkBase64, startByte, chunkEndByte, tota
 // ==========================================
 // [NEW] เพิ่มฟังก์ชันใหม่: สำหรับดึงค่าจาก Settings Sheet
 // ==========================================
+/**
+ * [PERF PATCH v2.1.1] renderPage_ เรียกใช้ทุกครั้งที่เปิดหน้า และมีจุดอื่นเรียกซ้ำอีก
+ * จึงจำค่าไว้ 1 ชุดต่อ execution (ชีต Settings มีเพียง 12 แถวและแทบไม่เปลี่ยน)
+ */
 function getGlobalSettings_() {
+  return pcMemo_('settings:global', pcReadGlobalSettings_);
+}
+
+/** Reads the Settings Sheet. Behaviour identical to the original getGlobalSettings_. */
+function pcReadGlobalSettings_() {
   var scriptProp = PropertiesService.getScriptProperties();
   var key = scriptProp.getProperty('key');
   var ss = key ? SpreadsheetApp.openById(key) : SpreadsheetApp.getActiveSpreadsheet();
