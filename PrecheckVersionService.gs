@@ -75,6 +75,30 @@ function pcEnsureDraftVersion_(submission, document, principal) {
   });
 }
 
+/** Normalizes the legacy quantitative-target result enum. Blank is allowed while saving a draft. */
+function pcNormalizeQuantitativeResult_(value, required) {
+  var text = String(value == null ? '' : value).trim();
+  var allowed = ['บรรลุเป้าหมายเชิงปริมาณ', 'ไม่บรรลุเป้าหมายเชิงปริมาณ'];
+  if (!text) {
+    if (required) throw pcUserError_('กรุณาเลือกผลของเป้าหมายเชิงปริมาณ', 'QUANTITATIVE_RESULT_REQUIRED');
+    return '';
+  }
+  if (allowed.indexOf(text) === -1) throw pcUserError_('ค่าผลของเป้าหมายเชิงปริมาณไม่ถูกต้อง', 'INVALID_QUANTITATIVE_RESULT');
+  return text;
+}
+
+/** Normalizes the legacy qualitative-target result enum. Blank is allowed while saving a draft. */
+function pcNormalizeQualitativeResult_(value, required) {
+  var text = String(value == null ? '' : value).trim();
+  var allowed = ['บรรลุเป้าหมายเชิงคุณภาพ', 'ไม่บรรลุเป้าหมายเชิงคุณภาพ'];
+  if (!text) {
+    if (required) throw pcUserError_('กรุณาเลือกผลของเป้าหมายเชิงคุณภาพ', 'QUALITATIVE_RESULT_REQUIRED');
+    return '';
+  }
+  if (allowed.indexOf(text) === -1) throw pcUserError_('ค่าผลของเป้าหมายเชิงคุณภาพไม่ถูกต้อง', 'INVALID_QUALITATIVE_RESULT');
+  return text;
+}
+
 /** Applies only client-supplied editable draft fields while preserving existing draft values on resume. */
 function pcPatchDraftFields_(version, payload, document, principal) {
   payload = payload || {};
@@ -86,9 +110,9 @@ function pcPatchDraftFields_(version, payload, document, principal) {
   function has(key){ return Object.prototype.hasOwnProperty.call(payload, key); }
   if (has('changeNote')) patch.ChangeNote = String(payload.changeNote || '').trim();
   if (has('quantitativeTarget')) patch.QuantitativeTarget = String(payload.quantitativeTarget || '').trim();
-  if (has('quantitativeResult')) patch.QuantitativeResult = String(payload.quantitativeResult || '').trim();
+  if (has('quantitativeResult')) patch.QuantitativeResult = pcNormalizeQuantitativeResult_(payload.quantitativeResult, false);
   if (has('qualitativeTarget')) patch.QualitativeTarget = String(payload.qualitativeTarget || '').trim();
-  if (has('qualitativeResult')) patch.QualitativeResult = String(payload.qualitativeResult || '').trim();
+  if (has('qualitativeResult')) patch.QualitativeResult = pcNormalizeQualitativeResult_(payload.qualitativeResult, false);
   if (has('expectedTarget')) patch.ExpectedTarget = String(payload.expectedTarget || '').trim();
   if (has('expectedAchievementResult')) {
     var expectedAchievement = String(payload.expectedAchievementResult || '').trim();
@@ -109,8 +133,10 @@ function pcPatchDraftFields_(version, payload, document, principal) {
 
 /** Validates all mandatory fields immediately before submission. */
 function pcValidateVersionForSubmit_(version, document) {
-  var requiredText = ['QuantitativeTarget','QuantitativeResult','QualitativeTarget','QualitativeResult','ExpectedTarget','ExpectedAchievementResult'];
+  var requiredText = ['QuantitativeTarget','QualitativeTarget','ExpectedTarget','ExpectedAchievementResult'];
   requiredText.forEach(function(field){ if (!String(version[field] == null ? '' : version[field]).trim()) throw pcUserError_('กรุณากรอกข้อมูลรายงานให้ครบถ้วนก่อนส่งตรวจ', 'SUBMISSION_INCOMPLETE'); });
+  pcNormalizeQuantitativeResult_(version.QuantitativeResult, true);
+  pcNormalizeQualitativeResult_(version.QualitativeResult, true);
   if (version.AllocatedBudget === '' || version.ActualBudget === '') throw pcUserError_('กรุณากรอกข้อมูลงบประมาณให้ครบถ้วน', 'SUBMISSION_INCOMPLETE');
   if (!version.FileId || !version.FileUrl || String(version.MimeType || '') !== 'application/pdf') throw pcUserError_('กรุณาอัปโหลดไฟล์ PDF ให้สำเร็จก่อนส่งตรวจ', 'PDF_REQUIRED');
   if (document.requiresStatistics) {
