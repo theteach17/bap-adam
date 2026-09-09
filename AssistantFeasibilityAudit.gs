@@ -67,6 +67,7 @@ function auditAssistantFeasibility() {
   var emailPresent = 0, emailValid = 0, emailMatched = 0;
   var openEmailMatched = 0, openNoEmail = 0;
   var byYear = {}, byType = {}, unmatchedEmails = {}, noEmailSamples = [];
+  var openByType = {}, blockedSamples = [], openByYear = {};
   var emailPattern = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
   values.forEach(function(row) {
@@ -81,7 +82,14 @@ function auditAssistantFeasibility() {
     byType[type] = (byType[type] || 0) + 1;
 
     var isOpen = !String(row[7] || '').trim();   // H = ลิงก์ฉบับสมบูรณ์
-    if (isOpen) open++; else done++;
+    if (isOpen) {
+      open++;
+      openByType[type] = (openByType[type] || 0) + 1;
+      openByYear[year] = (openByYear[year] || 0) + 1;
+      if (type === 'UNKNOWN' && blockedSamples.length < 10) {
+        blockedSamples.push(docNo + '  |  ' + String(row[2] || '').trim().substring(0, 60));
+      }
+    } else { done++; }
 
     var rawEmail = String(row[9] || '').trim();  // J = อีเมลเจ้าของ
     if (rawEmail) {
@@ -141,16 +149,28 @@ function auditAssistantFeasibility() {
   }
   say('');
 
-  say('[6] แยกตามประเภทเอกสาร');
+  say('[6] แยกตามประเภทเอกสาร  (ทั้งหมด / เฉพาะที่ยังไม่เสร็จ)');
   Object.keys(byType).sort().forEach(function(k) {
-    say('    ' + k + ' : ' + byType[k]);
+    say('    ' + k + ' : ' + byType[k] + '  /  ยังไม่เสร็จ ' + (openByType[k] || 0));
   });
   say('');
 
-  say('[7] แยกตามปีเอกสาร');
+  var blockedOpen = openByType['UNKNOWN'] || 0;
+  say('[6.1] เอกสารที่ชื่อไม่อยู่ในรูปแบบที่ระบบรองรับ  << ตัวชี้ขนาดกลุ่ม "ต้องแก้ชื่อในทะเบียนก่อน"');
+  say('    ทั้งทะเบียน               : ' + (byType['UNKNOWN'] || 0) + '  (' + pct(byType['UNKNOWN'] || 0, total) + ')');
+  say('    เฉพาะที่ยังไม่เสร็จ        : ' + blockedOpen + '  (' + pct(blockedOpen, open) + ' ของงานค้าง)');
+  say('    << กลุ่มนี้ lookupDocument() ปฏิเสธ จึงส่งเข้าระบบไม่ได้จนกว่าจะแก้ชื่อในทะเบียน');
+  if (blockedSamples.length) {
+    say('    ตัวอย่าง:');
+    blockedSamples.forEach(function(x) { say('      ' + x); });
+  }
+  say('');
+
+  say('[7] แยกตามปีเอกสาร  (ทั้งหมด / เฉพาะที่ยังไม่เสร็จ)');
   Object.keys(byYear).sort().forEach(function(k) {
-    say('    ' + k + ' : ' + byYear[k]);
+    say('    ' + k + ' : ' + byYear[k] + '  /  ยังไม่เสร็จ ' + (openByYear[k] || 0));
   });
+  say('    << ใช้ตัวเลขนี้ตัดสินใจตั้งค่า PC_ASSIST_WORKLOAD_FROM_YEAR');
   say('');
 
   var unmatchedList = Object.keys(unmatchedEmails)
@@ -169,6 +189,13 @@ function auditAssistantFeasibility() {
     noEmailSamples.forEach(function(s) { say('    ' + s); });
     say('');
   }
+
+  say('[10] ข้อเสนอการตั้งค่าจากข้อมูลชุดนี้');
+  say('    PC_ASSIST_NAME_MATCH         : ' + (openNoEmail > 0 ? 'true (มีเอกสารค้างที่ไม่ระบุอีเมล ' + openNoEmail + ' ฉบับ)' : 'true'));
+  say('    PC_ASSIST_STATUS_SCOPE       : ORG (คงพฤติกรรมเดิมของ lookupDocument)');
+  var suggestYear = Object.keys(openByYear).sort().filter(function(y) { return (openByYear[y] || 0) >= 5; })[0] || '';
+  say('    PC_ASSIST_WORKLOAD_FROM_YEAR : ' + (suggestYear ? suggestYear + ' หรือ 0 หากต้องการแสดงทุกปี' : '0'));
+  say('');
 
   say('===== จบรายงาน =====');
   return report.join('\n');

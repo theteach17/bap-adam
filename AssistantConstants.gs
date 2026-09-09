@@ -33,6 +33,7 @@ var AS_CONST = Object.freeze({
     NOT_STARTED: 'NOT_STARTED',
     FINALIZED: 'FINALIZED',
     MEMO_SUBMITTED: 'MEMO_SUBMITTED',
+    NAME_NOT_SUPPORTED: 'NAME_NOT_SUPPORTED',
     NOT_FOUND: 'NOT_FOUND'
   }),
 
@@ -142,6 +143,11 @@ var AS_STATUS_MAP = Object.freeze({
     label: 'ส่งบันทึกข้อความชี้แจงแล้ว', tone: 'done', owner: '',
     next: 'ดำเนินการครบถ้วนแล้ว', action: null
   },
+  NAME_NOT_SUPPORTED: {
+    label: 'ชื่อเอกสารไม่อยู่ในรูปแบบที่ระบบรองรับ', tone: 'warn', owner: 'เจ้าหน้าที่',
+    next: 'ระบบยังส่งเอกสารนี้ไม่ได้จนกว่าชื่อในทะเบียนจะถูกแก้ให้ขึ้นต้นด้วย "รายงานผลการดำเนินกิจกรรม" "บันทึกข้อความชี้แจงไม่ดำเนินกิจกรรม" หรือ "เอกสาร" กรุณาแจ้งเจ้าหน้าที่งานแผนงานและสารสนเทศเพื่อแก้ไขทะเบียน',
+    action: null
+  },
   NOT_FOUND: {
     label: 'ไม่พบเลขเอกสารนี้ในระบบ', tone: 'muted', owner: '',
     next: 'กรุณาตรวจสอบเลขเอกสารอีกครั้ง หรือขอเลขทะเบียนก่อนหากยังไม่เคยขึ้นทะเบียน', action: null
@@ -150,6 +156,7 @@ var AS_STATUS_MAP = Object.freeze({
 
 /** จัดกลุ่มสถานะเพื่อสรุปงานค้างของผู้ใช้ */
 var AS_STATUS_GROUP = Object.freeze({
+  BLOCKED: ['NAME_NOT_SUPPORTED'],
   WITH_YOU: ['DRAFT', 'UPLOADING', 'REVISION_REQUIRED'],
   WITH_OFFICER: ['WAITING_REVIEW', 'IN_REVIEW', 'WAITING_REVIEW_REVISED'],
   IN_SYSTEM: ['APPROVED_PENDING_COMMIT', 'APPROVED_COMMITTING', 'APPROVED_COMMIT_FAILED'],
@@ -179,6 +186,8 @@ function asStatusInfo_(statusCode) {
 function asStatusGroup_(statusCode) {
   var code = String(statusCode || '').trim().toUpperCase();
   if (code === AS_CONST.SYNTHETIC.NOT_STARTED) return 'NOT_STARTED';
+  if (code === AS_CONST.SYNTHETIC.NOT_FOUND) return 'NOT_FOUND';
+  if (AS_STATUS_GROUP.BLOCKED.indexOf(code) !== -1) return 'BLOCKED';
   if (AS_STATUS_GROUP.WITH_YOU.indexOf(code) !== -1) return 'WITH_YOU';
   if (AS_STATUS_GROUP.WITH_OFFICER.indexOf(code) !== -1) return 'WITH_OFFICER';
   if (AS_STATUS_GROUP.IN_SYSTEM.indexOf(code) !== -1) return 'IN_SYSTEM';

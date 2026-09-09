@@ -22,6 +22,7 @@ function asConfig_() {
       pilotEmails: pcList_(pcConfig_('PC_ASSIST_PILOT_EMAILS', '')).map(pcKey_),
       assistStatusScope: String(pcConfig_('PC_ASSIST_STATUS_SCOPE', 'ORG') || 'ORG').toUpperCase(),
       assistNameMatch: pcBool_(pcConfig_('PC_ASSIST_NAME_MATCH', 'true'), true),
+      assistWorkloadFromYear: pcInt_(pcConfig_('PC_ASSIST_WORKLOAD_FROM_YEAR', '0'), 0, 0, 3000),
       assistContactText: String(pcConfig_('PC_ASSIST_CONTACT_TEXT', '') || '').trim(),
       ratePerMin: pcInt_(pcConfig_('PC_ASSIST_RATE_PER_MIN', '20'), 20, 1, 120),
       logRetentionDays: pcInt_(pcConfig_('PC_ASSIST_LOG_RETENTION_DAYS', '90'), 90, 1, 3650),
@@ -268,6 +269,9 @@ function asAnswerDocumentStatus_(documentNumber, principal, cfg) {
   blocks.push(asNote_('ข้อมูล ณ ' + asThaiDateTime_(pcNowIso_())));
 
   var chips = [];
+  if (state.statusCode === AS_CONST.SYNTHETIC.NAME_NOT_SUPPORTED) {
+    chips.push({ label: 'ติดต่อเจ้าหน้าที่', intent: AS_CONST.INTENT.HOWTO_CONTACT });
+  }
   if (state.statusCode === PC_CONST.STATUS.REVISION_REQUIRED && state.canViewDetail) {
     chips.push({ label: 'ต้องแก้อะไรบ้าง', intent: AS_CONST.INTENT.DOC_FIX_LIST, params: { documentNumber: master.documentNumber } });
   }
@@ -403,6 +407,10 @@ function asAnswerMyPending_(principal, cfg, refresh) {
   var counts = work.counts || {};
   blocks.push.apply(blocks, asWorkloadGroupBlocks_(work.notStarted, 'ยังไม่เริ่มดำเนินการ', counts.notStarted));
   blocks.push.apply(blocks, asWorkloadGroupBlocks_(work.withYou, 'ค้างที่ท่าน', counts.withYou));
+  blocks.push.apply(blocks, asWorkloadGroupBlocks_(work.blocked, 'ต้องแก้ชื่อในทะเบียนก่อน', counts.blocked));
+  if ((counts.blocked || 0) > 0) {
+    blocks.push(asNote_('เอกสารกลุ่มนี้ส่งเข้าระบบไม่ได้จนกว่าชื่อในทะเบียนจะถูกแก้ให้ขึ้นต้นด้วยรูปแบบที่ระบบรองรับ กรุณาแจ้งเจ้าหน้าที่งานแผนงานและสารสนเทศ'));
+  }
   blocks.push.apply(blocks, asWorkloadGroupBlocks_(work.withOfficer, 'รอเจ้าหน้าที่ตรวจ', counts.withOfficer));
   blocks.push.apply(blocks, asWorkloadGroupBlocks_(work.inSystem, 'ระบบกำลังดำเนินการ', counts.inSystem));
   blocks.push(asNote_(asWorkloadFootnote_(work)));
@@ -421,7 +429,7 @@ function asAnswerMyPending_(principal, cfg, refresh) {
 /** คำตอบ: รายการของฉันที่กรองตามสถานะ */
 function asAnswerMyFiltered_(principal, cfg, refresh, statuses, title) {
   var work = asMyWorkload_(principal, cfg, refresh === true);
-  var pool = [].concat(work.notStarted, work.withYou, work.withOfficer, work.inSystem);
+  var pool = [].concat(work.notStarted, work.withYou, work.blocked, work.withOfficer, work.inSystem);
   var items = pool.filter(function(item) { return statuses.indexOf(item.statusCode) !== -1; });
 
   if (!items.length) {
@@ -447,6 +455,7 @@ function asAnswerMySummary_(principal, cfg, refresh) {
         ['เสร็จสมบูรณ์แล้ว', String(work.closed)],
         ['ยังไม่เริ่มดำเนินการ', String((work.counts || {}).notStarted || 0)],
         ['ค้างที่ท่าน', String((work.counts || {}).withYou || 0)],
+        ['ต้องแก้ชื่อในทะเบียนก่อน', String((work.counts || {}).blocked || 0)],
         ['รอเจ้าหน้าที่ตรวจ', String((work.counts || {}).withOfficer || 0)]
       ]),
       asNote_(asWorkloadFootnote_(work))
@@ -513,6 +522,9 @@ function asWorkloadGroupBlocks_(items, title, totalCount) {
   var total = (typeof totalCount === 'number' && totalCount >= items.length) ? totalCount : items.length;
   var shown = items.slice(0, AS_CONST.LIMITS.MAX_LIST_ITEMS);
   var blocks = [asList_(title + ' (' + total + ')', shown.map(function(item) {
+    // เอกสารที่ชื่อไม่อยู่ในรูปแบบที่รองรับ ต้องไม่มีปุ่มพาไปหน้าส่งเอกสาร
+    // เพราะ lookupDocument() จะปฏิเสธ ผู้ใช้จะเจอทางตันและเสียความเชื่อมั่น
+    var blocked = item.statusCode === AS_CONST.SYNTHETIC.NAME_NOT_SUPPORTED;
     var target = item.submissionId
       ? { page: 'PrecheckDetail', params: { submission: item.submissionId } }
       : { page: 'SubmitDocument', params: { document: item.documentNumber } };
@@ -521,7 +533,7 @@ function asWorkloadGroupBlocks_(items, title, totalCount) {
       subtitle: item.documentName,
       badge: item.statusLabel,
       note: item.matchSource === 'NAME' ? 'จับคู่จากชื่อผู้รับผิดชอบ' : '',
-      action: { label: item.submissionId ? 'ดูรายละเอียด' : 'เริ่มทำรายการ', page: target.page, params: target.params }
+      action: blocked ? null : { label: item.submissionId ? 'ดูรายละเอียด' : 'เริ่มทำรายการ', page: target.page, params: target.params }
     };
   }))];
   if (total > shown.length) {
@@ -535,6 +547,7 @@ function asWorkloadGroupBlocks_(items, title, totalCount) {
 function asWorkloadFootnote_(work) {
   var parts = ['แสดงเฉพาะเอกสารที่ระบุอีเมลหรือชื่อของท่านไว้ในทะเบียน'];
   if (work.matchedByName) parts.push('มี ' + work.matchedByName + ' ฉบับที่จับคู่จากชื่อผู้รับผิดชอบ หากไม่ใช่ของท่านโปรดแจ้งเจ้าหน้าที่');
+  if (work.fromYear) parts.push('แสดงเฉพาะเอกสารปี ' + work.fromYear + ' เป็นต้นไป (ข้ามเอกสารเก่า ' + (work.filteredByYear || 0) + ' ฉบับ)');
   if (work.truncated) parts.push('รายการมีจำนวนมาก จึงแสดงบางส่วน กรุณาดูทั้งหมดที่เมนูรายการเอกสารของฉัน');
   parts.push('ข้อมูล ณ ' + asThaiDateTime_(work.generatedAt));
   return parts.join(' · ');

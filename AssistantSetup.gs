@@ -57,7 +57,7 @@ function verifyAssistantInstallation() {
 
   check('คอนฟิกผู้ช่วยอยู่ใน whitelist ของ Settings Sheet', function() {
     var source = String(pcReadPrecheckConfigFromSettingsSheet_.toString());
-    var required = ['PC_ASSIST_ENABLED','PC_ASSIST_PILOT_EMAILS','PC_ASSIST_STATUS_SCOPE','PC_ASSIST_NAME_MATCH','PC_ASSIST_CONTACT_TEXT','PC_ASSIST_RATE_PER_MIN','PC_ASSIST_LOG_RETENTION_DAYS'];
+    var required = ['PC_ASSIST_ENABLED','PC_ASSIST_PILOT_EMAILS','PC_ASSIST_STATUS_SCOPE','PC_ASSIST_NAME_MATCH','PC_ASSIST_CONTACT_TEXT','PC_ASSIST_RATE_PER_MIN','PC_ASSIST_LOG_RETENTION_DAYS','PC_ASSIST_WORKLOAD_FROM_YEAR'];
     var missing = required.filter(function(k) { return source.indexOf(k) === -1; });
     if (missing.length) throw new Error('ยังไม่ได้เพิ่มใน whitelist: ' + missing.join(', '));
     return 'ครบ ' + required.length + ' คีย์';

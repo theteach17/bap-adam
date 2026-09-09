@@ -90,6 +90,10 @@ function asDocumentState_(principal, documentNumber) {
     statusCode = AS_CONST.SYNTHETIC.FINALIZED;
   } else if (master.documentType === PC_CONST.DOCUMENT_TYPES.NON_COMPLETED_MEMO && master.nonCompletedMemoLink) {
     statusCode = AS_CONST.SYNTHETIC.MEMO_SUBMITTED;
+  } else if (master.documentType === PC_CONST.DOCUMENT_TYPES.UNKNOWN) {
+    // lookupDocument() ปฏิเสธเอกสารที่ชื่อไม่อยู่ในรูปแบบที่รองรับ
+    // ถ้าตอบว่า "ยังไม่เริ่มดำเนินการ" แล้วพาไปหน้าส่งเอกสาร ผู้ใช้จะเจอทางตัน
+    statusCode = AS_CONST.SYNTHETIC.NAME_NOT_SUPPORTED;
   } else {
     statusCode = AS_CONST.SYNTHETIC.NOT_STARTED;
   }
@@ -134,6 +138,7 @@ function asMyWorkload_(principal, cfg, bypassCache) {
   }
 
   var allowNameMatch = pcBool_((cfg || {}).assistNameMatch, true);
+  var fromYear = pcInt_((cfg || {}).assistWorkloadFromYear, 0, 0, 3000);
   var myName = asNormalizePersonName_(principal && principal.displayName);
   var rows = asMasterRows_();
   var submissions = asSubmissionIndex_();
@@ -141,8 +146,9 @@ function asMyWorkload_(principal, cfg, bypassCache) {
 
   var result = {
     generatedAt: pcNowIso_(),
-    total: 0, closed: 0, matchedByName: 0,
-    notStarted: [], withYou: [], withOfficer: [], inSystem: [],
+    total: 0, closed: 0, matchedByName: 0, filteredByYear: 0,
+    fromYear: fromYear,
+    notStarted: [], withYou: [], withOfficer: [], inSystem: [], blocked: [],
     truncated: false
   };
 
@@ -170,10 +176,16 @@ function asMyWorkload_(principal, cfg, bypassCache) {
     if (finalLink || legacyFinal[docNo]) statusCode = AS_CONST.SYNTHETIC.FINALIZED;
     else if (submission && String(submission.Status || '')) statusCode = String(submission.Status);
     else if (documentType === PC_CONST.DOCUMENT_TYPES.NON_COMPLETED_MEMO && memoLink) statusCode = AS_CONST.SYNTHETIC.MEMO_SUBMITTED;
+    else if (documentType === PC_CONST.DOCUMENT_TYPES.UNKNOWN) statusCode = AS_CONST.SYNTHETIC.NAME_NOT_SUPPORTED;
     else statusCode = AS_CONST.SYNTHETIC.NOT_STARTED;
 
     var group = asStatusGroup_(statusCode);
     if (group === 'CLOSED') { result.closed++; continue; }
+
+    // กรองปีหลังรู้สถานะแล้ว เพื่อให้ตัวเลขที่แจ้งผู้ใช้หมายถึง "งานค้างเก่าที่ถูกข้าม"
+    // ไม่ใช่เอกสารเก่าทั้งหมดซึ่งส่วนใหญ่เสร็จไปแล้ว และสถิติรวมยังนับครบทุกปีเหมือนเดิม
+    var docYear = pcDocumentYear_(docNo);
+    if (fromYear && docYear && docYear < fromYear) { result.filteredByYear++; continue; }
 
     var item = {
       documentNumber: docNo,
@@ -186,6 +198,7 @@ function asMyWorkload_(principal, cfg, bypassCache) {
     };
 
     if (group === 'NOT_STARTED') result.notStarted.push(item);
+    else if (group === 'BLOCKED') result.blocked.push(item);
     else if (group === 'WITH_YOU') result.withYou.push(item);
     else if (group === 'WITH_OFFICER') result.withOfficer.push(item);
     else result.inSystem.push(item);
@@ -194,18 +207,22 @@ function asMyWorkload_(principal, cfg, bypassCache) {
   // เก็บจำนวนจริงก่อนตัดรายการ เพื่อไม่ให้ผู้ใช้เห็นตัวเลขที่ต่ำกว่าความจริง
   // การบอกว่า "ค้าง 30 ฉบับ" ทั้งที่มี 400 ฉบับ คือความผิดพลาดที่ทำลายความน่าเชื่อถือ
   var cap = 30; // CacheService จำกัด 100KB ต่อคีย์ จึงจำกัดขนาดที่เก็บไว้ให้ปลอดภัย
-  result.counts = {
-    notStarted: result.notStarted.length,
-    withYou: result.withYou.length,
-    withOfficer: result.withOfficer.length,
-    inSystem: result.inSystem.length
-  };
-  ['notStarted','withYou','withOfficer','inSystem'].forEach(function(key) {
-    result[key].sort(function(a, b) { return String(a.documentNumber).localeCompare(String(b.documentNumber)); });
+  var groups = ['notStarted','withYou','blocked','withOfficer','inSystem'];
+  result.counts = {};
+  groups.forEach(function(key) { result.counts[key] = result[key].length; });
+
+  groups.forEach(function(key) {
+    // ทะเบียนมีเอกสารย้อนหลังหลายปี จึงเรียงปีใหม่สุดขึ้นก่อนเสมอ
+    // ไม่เช่นนั้นผู้ใช้จะเห็นเอกสารเก่าค้างจากปีก่อน ๆ ขึ้นก่อนงานปีปัจจุบัน
+    result[key].sort(function(a, b) {
+      var ya = pcDocumentYear_(a.documentNumber), yb = pcDocumentYear_(b.documentNumber);
+      if (ya !== yb) return yb - ya;
+      return String(b.documentNumber).localeCompare(String(a.documentNumber));
+    });
     if (result[key].length > cap) { result[key] = result[key].slice(0, cap); result.truncated = true; }
   });
 
-  result.openCount = result.counts.notStarted + result.counts.withYou + result.counts.withOfficer + result.counts.inSystem;
+  result.openCount = groups.reduce(function(sum, key) { return sum + result.counts[key]; }, 0);
   result.actionableCount = result.counts.notStarted + result.counts.withYou;
 
   try { cache.put(cacheKey, JSON.stringify(result), AS_CONST.CACHE.WORK_SECONDS); } catch (ignored) {}
