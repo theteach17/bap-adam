@@ -125,9 +125,10 @@ function asCanSeeStatus_(principal, state, cfg) {
  * เพราะ getMyDocuments() เดิมเห็นเฉพาะเอกสารที่มีแถวใน PC_Submissions แล้ว
  * จึงมองไม่เห็นเอกสารที่ยังไม่เคยเริ่มทำ ซึ่งเป็นกรณีที่ค้างจริงที่สุด
  */
-function asMyWorkload_(principal, cfg, bypassCache) {
+function asMyWorkload_(principal, cfg, bypassCache, includeAllYears) {
   var email = pcKey_(principal && principal.email);
-  var cacheKey = AS_CONST.CACHE.WORK_PREFIX + hashString_(email || String(principal && principal.username || '')).substring(0, 24);
+  var cacheKey = AS_CONST.CACHE.WORK_PREFIX + (includeAllYears ? 'ALL_' : '') +
+                 hashString_(email || String(principal && principal.username || '')).substring(0, 24);
   var cache = CacheService.getScriptCache();
 
   if (!bypassCache) {
@@ -138,7 +139,7 @@ function asMyWorkload_(principal, cfg, bypassCache) {
   }
 
   var allowNameMatch = pcBool_((cfg || {}).assistNameMatch, true);
-  var fromYear = pcInt_((cfg || {}).assistWorkloadFromYear, 0, 0, 3000);
+  var fromYear = includeAllYears === true ? 0 : pcInt_((cfg || {}).assistWorkloadFromYear, 0, 0, 3000);
   var myName = asNormalizePersonName_(principal && principal.displayName);
   var rows = asMasterRows_();
   var submissions = asSubmissionIndex_();
@@ -146,7 +147,7 @@ function asMyWorkload_(principal, cfg, bypassCache) {
 
   var result = {
     generatedAt: pcNowIso_(),
-    total: 0, closed: 0, matchedByName: 0, filteredByYear: 0,
+    total: 0, closed: 0, matchedByName: 0, filteredByYear: 0, filteredBlocked: 0,
     fromYear: fromYear,
     notStarted: [], withYou: [], withOfficer: [], inSystem: [], blocked: [],
     truncated: false
@@ -185,7 +186,11 @@ function asMyWorkload_(principal, cfg, bypassCache) {
     // กรองปีหลังรู้สถานะแล้ว เพื่อให้ตัวเลขที่แจ้งผู้ใช้หมายถึง "งานค้างเก่าที่ถูกข้าม"
     // ไม่ใช่เอกสารเก่าทั้งหมดซึ่งส่วนใหญ่เสร็จไปแล้ว และสถิติรวมยังนับครบทุกปีเหมือนเดิม
     var docYear = pcDocumentYear_(docNo);
-    if (fromYear && docYear && docYear < fromYear) { result.filteredByYear++; continue; }
+    if (fromYear && docYear && docYear < fromYear) {
+      result.filteredByYear++;
+      if (group === 'BLOCKED') result.filteredBlocked++;
+      continue;
+    }
 
     var item = {
       documentNumber: docNo,
@@ -282,9 +287,14 @@ function asOfficerKpi_() {
   return kpi;
 }
 
-/** ล้างแคชรายการงานของผู้ใช้คนหนึ่ง ใช้เมื่อผู้ใช้กดรีเฟรช */
+/**
+ * ล้างแคชรายการงานของผู้ใช้คนหนึ่ง ใช้เมื่อผู้ใช้กดรีเฟรช
+ * ต้องล้างทั้งมุมมองที่กรองปีและมุมมองทุกปี เพราะเก็บคนละคีย์กัน
+ */
 function asDropWorkloadCache_(principal) {
-  var email = pcKey_(principal && principal.email);
-  var key = AS_CONST.CACHE.WORK_PREFIX + hashString_(email || String(principal && principal.username || '')).substring(0, 24);
-  try { CacheService.getScriptCache().remove(key); } catch (ignored) {}
+  var hash = hashString_(pcKey_(principal && principal.email) || String(principal && principal.username || '')).substring(0, 24);
+  var cache = CacheService.getScriptCache();
+  [AS_CONST.CACHE.WORK_PREFIX + hash, AS_CONST.CACHE.WORK_PREFIX + 'ALL_' + hash].forEach(function(key) {
+    try { cache.remove(key); } catch (ignored) {}
+  });
 }

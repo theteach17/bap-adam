@@ -144,7 +144,7 @@ function assistantQuickAction(intent, params) {
     var refresh = pcBool_(params.refresh, false);
     if (refresh) asDropWorkloadCache_(guard.principal);
 
-    var answer = asBuildAnswer_(wanted, docNo, guard.principal, guard.cfg, refresh);
+    var answer = asBuildAnswer_(wanted, docNo, guard.principal, guard.cfg, refresh, pcBool_(params.allYears, false));
     var parsed = { intent: wanted, confidence: 1, documentNumber: docNo, alternatives: [] };
     return asFinalizeReply_(parsed, answer, guard, '[ปุ่มลัด] ' + wanted + (docNo ? ' ' + docNo : ''), started);
   } catch (error) {
@@ -181,7 +181,7 @@ function asSafeContext_(context) {
 }
 
 /** ประกอบคำตอบตามเจตนา */
-function asBuildAnswer_(intent, documentNumber, principal, cfg, refresh) {
+function asBuildAnswer_(intent, documentNumber, principal, cfg, refresh, allYears) {
   switch (intent) {
     case AS_CONST.INTENT.HOWTO_START:
     case AS_CONST.INTENT.HOWTO_REGISTER:
@@ -206,16 +206,16 @@ function asBuildAnswer_(intent, documentNumber, principal, cfg, refresh) {
       return asAnswerHistory_(documentNumber, principal, cfg);
 
     case AS_CONST.INTENT.MY_PENDING:
-      return asAnswerMyPending_(principal, cfg, refresh);
+      return asAnswerMyPending_(principal, cfg, refresh, allYears);
 
     case AS_CONST.INTENT.MY_NEEDS_FIX:
-      return asAnswerMyFiltered_(principal, cfg, refresh, ['REVISION_REQUIRED'], 'เอกสารที่ต้องแก้ไขและส่งใหม่');
+      return asAnswerMyFiltered_(principal, cfg, refresh, ['REVISION_REQUIRED'], 'เอกสารที่ต้องแก้ไขและส่งใหม่', allYears);
 
     case AS_CONST.INTENT.MY_IN_REVIEW:
-      return asAnswerMyFiltered_(principal, cfg, refresh, AS_STATUS_GROUP.WITH_OFFICER, 'เอกสารที่รอเจ้าหน้าที่ตรวจ');
+      return asAnswerMyFiltered_(principal, cfg, refresh, AS_STATUS_GROUP.WITH_OFFICER, 'เอกสารที่รอเจ้าหน้าที่ตรวจ', allYears);
 
     case AS_CONST.INTENT.MY_SUMMARY:
-      return asAnswerMySummary_(principal, cfg, refresh);
+      return asAnswerMySummary_(principal, cfg, refresh, allYears);
 
     case AS_CONST.INTENT.QUEUE_SUMMARY:
       return asAnswerQueueSummary_(principal);
@@ -393,14 +393,19 @@ function asAnswerHistory_(documentNumber, principal, cfg) {
 }
 
 /** คำตอบ: เอกสารค้างส่งของฉัน */
-function asAnswerMyPending_(principal, cfg, refresh) {
-  var work = asMyWorkload_(principal, cfg, refresh === true);
+function asAnswerMyPending_(principal, cfg, refresh, allYears) {
+  var work = asMyWorkload_(principal, cfg, refresh === true, allYears === true);
   if (!work.openCount) {
-    return {
-      blocks: [asText_('ไม่พบเอกสารค้างในความรับผิดชอบของท่านครับ'),
-               asNote_(asWorkloadFootnote_(work))],
-      chips: asDefaultChipSet_(principal), needs: null
-    };
+    var emptyBlocks = [asText_(work.filteredByYear
+      ? ('ไม่พบเอกสารค้างของปี ' + work.fromYear + ' เป็นต้นไปในความรับผิดชอบของท่านครับ')
+      : 'ไม่พบเอกสารค้างในความรับผิดชอบของท่านครับ')];
+    emptyBlocks.push.apply(emptyBlocks, asOlderBacklogBlocks_(work));
+    emptyBlocks.push(asNote_(asWorkloadFootnote_(work)));
+    var emptyChips = [];
+    if (work.filteredByYear) emptyChips.push({ label: 'ดูงานค้างปีก่อนหน้า', intent: AS_CONST.INTENT.MY_PENDING, params: { allYears: true } });
+    emptyChips.push({ label: 'สรุปงานของฉัน', intent: AS_CONST.INTENT.MY_SUMMARY });
+    emptyChips.push({ label: 'ตรวจสอบสถานะเอกสาร', intent: AS_CONST.INTENT.NEED_DOCUMENT_NUMBER });
+    return { blocks: emptyBlocks, chips: emptyChips, needs: null };
   }
 
   var blocks = [asText_('พบเอกสารที่ยังไม่เสร็จสมบูรณ์ในความรับผิดชอบของท่าน ' + work.openCount + ' ฉบับ')];
@@ -413,22 +418,22 @@ function asAnswerMyPending_(principal, cfg, refresh) {
   }
   blocks.push.apply(blocks, asWorkloadGroupBlocks_(work.withOfficer, 'รอเจ้าหน้าที่ตรวจ', counts.withOfficer));
   blocks.push.apply(blocks, asWorkloadGroupBlocks_(work.inSystem, 'ระบบกำลังดำเนินการ', counts.inSystem));
+  blocks.push.apply(blocks, asOlderBacklogBlocks_(work));
   blocks.push(asNote_(asWorkloadFootnote_(work)));
 
-  return {
-    blocks: blocks,
-    chips: [
-      { label: 'รีเฟรชข้อมูล', intent: AS_CONST.INTENT.MY_PENDING, params: { refresh: true } },
-      { label: 'เฉพาะที่ต้องแก้ไข', intent: AS_CONST.INTENT.MY_NEEDS_FIX },
-      { label: 'ส่งเอกสาร', intent: AS_CONST.INTENT.HOWTO_SUBMIT_REPORT }
-    ],
-    needs: null
-  };
+  var chips = [
+    { label: 'รีเฟรชข้อมูล', intent: AS_CONST.INTENT.MY_PENDING, params: { refresh: true } },
+    { label: 'เฉพาะที่ต้องแก้ไข', intent: AS_CONST.INTENT.MY_NEEDS_FIX }
+  ];
+  if (work.filteredByYear) chips.push({ label: 'ดูงานค้างปีก่อนหน้า', intent: AS_CONST.INTENT.MY_PENDING, params: { allYears: true } });
+  else chips.push({ label: 'ส่งเอกสาร', intent: AS_CONST.INTENT.HOWTO_SUBMIT_REPORT });
+
+  return { blocks: blocks, chips: chips, needs: null };
 }
 
 /** คำตอบ: รายการของฉันที่กรองตามสถานะ */
-function asAnswerMyFiltered_(principal, cfg, refresh, statuses, title) {
-  var work = asMyWorkload_(principal, cfg, refresh === true);
+function asAnswerMyFiltered_(principal, cfg, refresh, statuses, title, allYears) {
+  var work = asMyWorkload_(principal, cfg, refresh === true, allYears === true);
   var pool = [].concat(work.notStarted, work.withYou, work.blocked, work.withOfficer, work.inSystem);
   var items = pool.filter(function(item) { return statuses.indexOf(item.statusCode) !== -1; });
 
@@ -445,8 +450,8 @@ function asAnswerMyFiltered_(principal, cfg, refresh, statuses, title) {
 }
 
 /** คำตอบ: สรุปภาพรวมงานของฉัน */
-function asAnswerMySummary_(principal, cfg, refresh) {
-  var work = asMyWorkload_(principal, cfg, refresh === true);
+function asAnswerMySummary_(principal, cfg, refresh, allYears) {
+  var work = asMyWorkload_(principal, cfg, refresh === true, allYears === true);
   return {
     blocks: [
       asText_('สรุปเอกสารในความรับผิดชอบของท่าน'),
@@ -456,14 +461,12 @@ function asAnswerMySummary_(principal, cfg, refresh) {
         ['ยังไม่เริ่มดำเนินการ', String((work.counts || {}).notStarted || 0)],
         ['ค้างที่ท่าน', String((work.counts || {}).withYou || 0)],
         ['ต้องแก้ชื่อในทะเบียนก่อน', String((work.counts || {}).blocked || 0)],
-        ['รอเจ้าหน้าที่ตรวจ', String((work.counts || {}).withOfficer || 0)]
+        ['รอเจ้าหน้าที่ตรวจ', String((work.counts || {}).withOfficer || 0)],
+        ['ค้างจากปีก่อนหน้า (ไม่แสดงในรายการ)', work.filteredByYear ? String(work.filteredByYear) : '']
       ]),
       asNote_(asWorkloadFootnote_(work))
     ],
-    chips: [
-      { label: 'ดูรายการค้างส่ง', intent: AS_CONST.INTENT.MY_PENDING },
-      { label: 'เฉพาะที่ต้องแก้ไข', intent: AS_CONST.INTENT.MY_NEEDS_FIX }
-    ],
+    chips: asOlderBacklogChips_(work, principal),
     needs: null
   };
 }
@@ -543,11 +546,37 @@ function asWorkloadGroupBlocks_(items, title, totalCount) {
   return blocks;
 }
 
+/**
+ * แจ้งงานค้างของปีก่อนหน้าที่ถูกกรองออกจากรายการหลัก
+ * หลักการ: ซ่อนจากรายการได้ แต่ห้ามทำให้ผู้ใช้เข้าใจว่าไม่มีอะไรค้างเลย
+ * การให้ความอุ่นใจที่ผิดร้ายแรงกว่าการแสดงรายการยาว
+ */
+function asOlderBacklogBlocks_(work) {
+  if (!work || !work.filteredByYear) return [];
+  var text = 'นอกจากนี้ยังมีเอกสารค้างของปีก่อน ' + work.fromYear + ' อีก ' + work.filteredByYear + ' ฉบับ';
+  if (work.filteredBlocked) {
+    text += ' ซึ่ง ' + work.filteredBlocked + ' ฉบับติดเรื่องรูปแบบชื่อเอกสารในทะเบียน จึงยังส่งเข้าระบบไม่ได้';
+  }
+  return [asNote_(text)];
+}
+
+/** ปุ่มลัดที่เพิ่มทางเลือกดูงานค้างปีเก่าเมื่อมีของถูกกรองไว้ */
+function asOlderBacklogChips_(work, principal) {
+  var chips = [{ label: 'ดูรายการค้างส่ง', intent: AS_CONST.INTENT.MY_PENDING }];
+  if (work && work.filteredByYear) {
+    chips.push({ label: 'ดูงานค้างปีก่อนหน้า', intent: AS_CONST.INTENT.MY_PENDING, params: { allYears: true } });
+  } else {
+    chips.push({ label: 'เฉพาะที่ต้องแก้ไข', intent: AS_CONST.INTENT.MY_NEEDS_FIX });
+  }
+  if (asIsOfficer_(principal)) chips.push({ label: 'ภาพรวมคิวตรวจ', intent: AS_CONST.INTENT.QUEUE_SUMMARY });
+  return chips;
+}
+
 /** ข้อความกำกับท้ายรายการ เพื่อไม่ให้ผู้ใช้เข้าใจผิดว่ารายการครบถ้วนแน่นอน */
 function asWorkloadFootnote_(work) {
   var parts = ['แสดงเฉพาะเอกสารที่ระบุอีเมลหรือชื่อของท่านไว้ในทะเบียน'];
   if (work.matchedByName) parts.push('มี ' + work.matchedByName + ' ฉบับที่จับคู่จากชื่อผู้รับผิดชอบ หากไม่ใช่ของท่านโปรดแจ้งเจ้าหน้าที่');
-  if (work.fromYear) parts.push('แสดงเฉพาะเอกสารปี ' + work.fromYear + ' เป็นต้นไป (ข้ามเอกสารเก่า ' + (work.filteredByYear || 0) + ' ฉบับ)');
+  if (work.fromYear) parts.push('แสดงเฉพาะเอกสารปี ' + work.fromYear + ' เป็นต้นไป');
   if (work.truncated) parts.push('รายการมีจำนวนมาก จึงแสดงบางส่วน กรุณาดูทั้งหมดที่เมนูรายการเอกสารของฉัน');
   parts.push('ข้อมูล ณ ' + asThaiDateTime_(work.generatedAt));
   return parts.join(' · ');
