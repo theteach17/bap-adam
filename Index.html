@@ -163,7 +163,9 @@
       margin-left: var(--sidebar-width);
       width: calc(100% - var(--sidebar-width));
       min-height: 100vh;
-      padding: 0 0 50px 0;
+      /* [STATBAR PATCH] เดิมเว้น 50px ไว้ให้แถบ Footer Marquee ที่ position:fixed
+         เมื่อถอดแถบนั้นออกแล้วจึงคืนพื้นที่ส่วนนี้ให้เนื้อหา */
+      padding: 0 0 16px 0;
       transition: margin-left 0.3s ease-in-out; /* เพิ่ม Animation */
     }
 
@@ -385,24 +387,73 @@
         border-color: #ff7675;
     }
 
-    /* Footer Marquee */
-    .footer-marquee {
-      position: fixed;
-      bottom: 0;
-      left: var(--sidebar-width);
-      width: calc(100% - var(--sidebar-width));
-      background: #2d3436;
-      color: #fff;
-      padding: 8px 0;
-      z-index: 1000;
-      font-size: 0.85rem;
-      transition: left 0.3s, width 0.3s; /* เพิ่ม Animation */
+    /* =====================================================================
+       [STATBAR PATCH] แถบสรุปจำนวนเอกสาร — แทนที่ Footer Marquee เดิม
+       เหตุผล:
+         1) แถบเดิมเป็นข้อความวิ่ง ผู้ใช้ต้องรอครบรอบจึงจะอ่านตัวเลขที่ต้องการได้
+         2) แถบเดิมเป็น position:fixed ครองแถบล่างจอตลอดเวลา
+         3) marquee เป็น deprecated element และข้อความเคลื่อนไหวขัด WCAG 2.2.2
+       ทุกคลาสในบล็อกนี้ขึ้นต้นด้วย statbar- เพื่อไม่ให้ชนกับ Bootstrap 5.3
+       ===================================================================== */
+    .statbar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 2px 2px 10px 2px;
+      /* จองความสูงไว้ล่วงหน้า เพื่อไม่ให้ตารางขยับตอนสถิติโหลดเสร็จ */
+      min-height: 45px;
+      overflow-x: auto;
+      white-space: nowrap;
+      scrollbar-width: none;
+      -webkit-overflow-scrolling: touch;
     }
 
-    .footer-marquee img {
-      height: 20px;
-      margin: 0 10px;
-      vertical-align: middle;
+    .statbar::-webkit-scrollbar { display: none; }
+
+    .statbar-chip {
+      flex: 0 0 auto;
+      display: inline-flex;
+      align-items: baseline;
+      gap: 6px;
+      background: #ffffff;
+      border: 1px solid #ffeaa7;
+      color: #636e72;
+      border-radius: 999px;
+      padding: 7px 14px;
+      font-family: inherit;
+      font-size: 0.82rem;
+      line-height: 1.25;
+      cursor: pointer;
+      transition: background-color 0.2s, border-color 0.2s, color 0.2s;
+    }
+
+    .statbar-chip:hover {
+      background: var(--sidebar-active);
+      border-color: var(--soft-orange);
+    }
+
+    .statbar-chip:focus-visible {
+      outline: 3px solid rgba(214, 48, 49, 0.28);
+      outline-offset: 2px;
+    }
+
+    .statbar-chip.is-on {
+      background: var(--soft-yellow);
+      border-color: var(--primary-red);
+      color: var(--text-dark);
+    }
+
+    .statbar-num {
+      font-weight: 700;
+      font-size: 0.95rem;
+      color: var(--primary-red);
+    }
+
+    .statbar-state {
+      flex: 0 0 auto;
+      font-size: 0.82rem;
+      color: #b2bec3;
+      padding: 7px 2px;
     }
 
     /* Modals Colors */
@@ -456,7 +507,11 @@
         .sidebar.active { transform: translateX(0); }
         
         .main-content { margin-left: 0; width: 100%; }
-        .footer-marquee { left: 0; width: 100%; }
+        /* [STATBAR PATCH] บนมือถือ .top-bar สูงขึ้นอยู่แล้ว จึงบีบแถบชิปให้เตี้ยลง
+           และคงเป็นแถวเดียวเลื่อนแนวนอน ไม่ให้ดันตารางลงไปลึกเกินไป */
+        .statbar { gap: 6px; padding: 2px 2px 8px 2px; min-height: 40px; }
+        .statbar-chip { padding: 6px 12px; font-size: 0.78rem; }
+        .statbar-num { font-size: 0.9rem; }
         
         .top-bar { height: auto; padding: 15px; flex-direction: column; align-items: flex-start; gap: 15px; }
         
@@ -524,6 +579,7 @@
             <i class="fas fa-sign-out-alt me-2"></i> ออกจากระบบ
         </button>
         <div class="text-center mt-2 text-muted" style="font-size:0.7rem;">
+            รวดเร็ว ฉับไว โปร่งใส ตรวจสอบได้<br>
             v.2.1.0<br>พัฒนาโดยงานแผนงานและสารสนเทศโรงเรียน
         </div>
     </div>
@@ -556,7 +612,11 @@
     </div>
 
     <div class="content-wrapper">
-      
+
+      <div class="statbar" id="statBar" role="group" aria-label="สรุปจำนวนเอกสารตามกลุ่มบริหาร">
+        <span class="statbar-state" id="statBarState">กำลังโหลดสถิติ...</span>
+      </div>
+
       <div class="content-card">
         
         <div class="p-3 d-flex justify-content-between align-items-center border-bottom" style="background: #fffdf9;">
@@ -592,13 +652,7 @@
         </div>
       </div>
       
-    </div> </div> <div class="footer-marquee">
-    <marquee id="marquee" scrollamount="5">
-      <img src="https://img2.pic.in.th/pic/logofd3322a65d133ac4.png" alt="Logo">
-      ยินดีต้อนรับสู่ศูนย์สารสนเทศกลาง : งานแผนงานและสารสนเทศโรงเรียน กลุ่มบริหารงบประมาณ โรงเรียนแกลง วิทยสถาวร : รวดเร็ว ฉับไว โปร่งใส ตรวจสอบได้ : 
-      <span id="reportCounts">Loading stats...</span>
-    </marquee>
-  </div>
+    </div> </div>
 
   <div id="formModal" class="modal fade" tabindex="-1">
     <div class="modal-dialog modal-xl modal-dialog-centered">
@@ -916,7 +970,7 @@
     window.onload = function() {
       setupUserProfile();
       fetchData();
-      updateMarquee();
+      updateStatChips();
       setupNonCompletedModalResetHandler();
       loadNavigationContext();
       handleLegacyRoute();
@@ -1087,6 +1141,9 @@
     // --- Table & Data Logic ---
     document.getElementById('limit').addEventListener('input', changeLimit);
     document.getElementById('search').addEventListener('input', fetchData);
+    // [STATBAR PATCH] เพิ่ม listener ตัวที่สองแบบไม่แตะ listener เดิม
+    // เพื่อให้ไฮไลต์ของชิปตรงกับคำค้นเสมอ แม้ผู้ใช้จะพิมพ์ค้นหาเอง
+    document.getElementById('search').addEventListener('input', syncStatChipState);
     
     function changeLimit() {
       currentPage = 1;
@@ -1792,10 +1849,92 @@
     }
 
 
-    function updateMarquee() {
-      google.script.run.withSuccessHandler(function(counts) {
-        document.getElementById('reportCounts').innerHTML = `จำนวนเอกสารทั้งหมด ${counts.totalDocuments} รายการ : กลุ่มบริหารวิชาการ ${counts.academicGroupCount} รายการ : กลุ่มบริหารทั่วไป ${counts.generalGroupCount} รายการ : กลุ่มบริหารงานบุคคล ${counts.personnelGroupCount} รายการ : กลุ่มบริหารงบประมาณ ${counts.budgetGroupCount} รายการ`;
-      }).getReportCounts();
+    /* =====================================================================
+       [STATBAR PATCH] แถบสรุปจำนวนเอกสาร — แทนที่ updateMarquee() เดิม
+       ใช้ผลลัพธ์จาก getReportCounts() ชุดเดิมทุกฟิลด์ ไม่มีการแก้ฝั่งเซิร์ฟเวอร์
+       การกรองใช้ช่องค้นหาเดิม + fetchData() เดิม จึงไม่มี endpoint ใหม่
+       หมายเหตุ: getReportCounts() มีแคชฝั่งเซิร์ฟเวอร์ 60 วินาทีตามเดิม
+                 ตัวเลขหลังบันทึกรายการใหม่จึงอาจอัปเดตช้าได้ถึง 1 นาที
+                 (พฤติกรรมเดียวกับแถบข้อความวิ่งเดิมทุกประการ)
+       ===================================================================== */
+    const STATBAR_GROUPS = [
+      { label: 'ทั้งหมด',              field: 'totalDocuments',      filter: '' },
+      { label: 'กลุ่มบริหารวิชาการ',   field: 'academicGroupCount',  filter: 'กลุ่มบริหารวิชาการ' },
+      { label: 'กลุ่มบริหารงบประมาณ',  field: 'budgetGroupCount',    filter: 'กลุ่มบริหารงบประมาณ' },
+      { label: 'กลุ่มบริหารทั่วไป',    field: 'generalGroupCount',   filter: 'กลุ่มบริหารทั่วไป' },
+      { label: 'กลุ่มบริหารงานบุคคล',  field: 'personnelGroupCount', filter: 'กลุ่มบริหารงานบุคคล' }
+    ];
+
+    function setStatBarState(message) {
+      const bar = document.getElementById('statBar');
+      if (!bar) return;
+      bar.innerHTML = '';
+      const span = document.createElement('span');
+      span.className = 'statbar-state';
+      span.id = 'statBarState';
+      span.textContent = message;
+      bar.appendChild(span);
+    }
+
+    function updateStatChips() {
+      if (!document.getElementById('statBar')) return;
+      google.script.run
+        .withSuccessHandler(function(counts) { renderStatChips(counts || {}); })
+        .withFailureHandler(function() { setStatBarState('ไม่สามารถโหลดสถิติได้ในขณะนี้'); })
+        .getReportCounts();
+    }
+
+    function renderStatChips(counts) {
+      const bar = document.getElementById('statBar');
+      if (!bar) return;
+      // ป้องกันค่าที่ผิดรูปจากเซิร์ฟเวอร์ ไม่ให้แสดงคำว่า NaN ให้ผู้ใช้เห็น
+      counts = counts || {};
+      bar.innerHTML = '';
+      STATBAR_GROUPS.forEach(function(group) {
+        let value = Number(counts[group.field]);
+        if (!isFinite(value)) value = 0;
+        const chip = document.createElement('button');
+        chip.type = 'button';
+        chip.className = 'statbar-chip';
+        chip.setAttribute('data-statbar-filter', group.filter);
+        chip.setAttribute('aria-pressed', 'false');
+        chip.title = group.filter ? ('กรองเฉพาะ' + group.label) : 'แสดงเอกสารทั้งหมด';
+
+        const num = document.createElement('span');
+        num.className = 'statbar-num';
+        num.textContent = value.toLocaleString('en-US');
+
+        const label = document.createElement('span');
+        label.textContent = group.label;
+
+        chip.appendChild(num);
+        chip.appendChild(label);
+        chip.addEventListener('click', function() { applyStatChipFilter(group.filter); });
+        bar.appendChild(chip);
+      });
+      syncStatChipState();
+    }
+
+    // กรองตารางผ่านช่องค้นหาเดิม เพื่อให้ผู้ใช้เห็นเหตุผลที่ตารางถูกกรองและกดล้างเองได้
+    function applyStatChipFilter(filterText) {
+      const searchInput = document.getElementById('search');
+      if (!searchInput) return;
+      searchInput.value = filterText || '';
+      currentPage = 1;
+      fetchData();
+      syncStatChipState();
+    }
+
+    function syncStatChipState() {
+      const searchInput = document.getElementById('search');
+      const current = searchInput ? String(searchInput.value || '').trim() : '';
+      const chips = document.querySelectorAll('#statBar .statbar-chip');
+      for (let i = 0; i < chips.length; i++) {
+        const chipFilter = chips[i].getAttribute('data-statbar-filter') || '';
+        const isOn = chipFilter ? (chipFilter === current) : (current === '');
+        chips[i].classList.toggle('is-on', isOn);
+        chips[i].setAttribute('aria-pressed', isOn ? 'true' : 'false');
+      }
     }
 
 // =========================================================================
@@ -1916,7 +2055,7 @@
             }).then(() => { resetForm(); });
             bootstrap.Modal.getInstance(document.getElementById('formModal')).hide();
             fetchData();
-            updateMarquee();
+            updateStatChips();
           })
           .withFailureHandler(function(err) {
             hideLoading();
@@ -2216,7 +2355,7 @@ function validateAndSaveReport() {
             Swal.fire({ icon: 'success', title: 'รายงานถูกส่งแล้ว', showConfirmButton: true }).then(() => { resetForm(); });
             bootstrap.Modal.getInstance(document.getElementById('reportFormModal')).hide();
             fetchData();
-            updateMarquee();
+            updateStatChips();
         }).withFailureHandler(onUploadFailed).saveReport(
             formData.documentNumber, fileId, formData.quantitativeTarget, formData.quantitativeResult,
             formData.qualitativeTarget, formData.qualitativeResult, formData.expectedTarget,
@@ -2230,7 +2369,7 @@ function validateAndSaveReport() {
             Swal.fire({ icon: 'success', title: 'บันทึกข้อความถูกส่งแล้ว', showConfirmButton: true }).then(() => { resetForm(); });
             bootstrap.Modal.getInstance(document.getElementById('nonCompletedProjectFormModal')).hide();
             fetchData();
-            updateMarquee();
+            updateStatChips();
           }).withFailureHandler(onUploadFailed).saveNonCompletedProject(
             formData.projectName, formData.adminGroup, formData.workGroup,
             // [EDITED] แนบชื่อคนล็อกอินไปให้เซิร์ฟเวอร์
