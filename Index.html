@@ -1077,6 +1077,10 @@
         if (adminLegacyReportMenu) adminLegacyReportMenu.style.display = isPrecheckAdmin ? 'flex' : 'none';
         if (adminLegacyNonCompletedMenu) adminLegacyNonCompletedMenu.style.display = isPrecheckAdmin ? 'flex' : 'none';
 
+        // [ASSISTANT PATCH] วิดเจ็ตผู้ช่วยซ่อนไว้เป็นค่าตั้งต้น จะแสดงก็ต่อเมื่อ
+        // เซิร์ฟเวอร์ยืนยันว่าเปิดใช้งานสำหรับบัญชีนี้ (fail-closed)
+        if (typeof pcwSetAvailable === 'function') pcwSetAvailable(!!(ctx && ctx.assistantEnabled));
+
         if (ctx && ctx.displayName) {
           document.getElementById('displayUserName').textContent = ctx.displayName;
           document.getElementById('userAvatar').textContent = ctx.displayName.charAt(0).toUpperCase();
@@ -2395,5 +2399,6 @@ function validateAndSaveReport() {
       console.error(error); 
     }
   </script>
+  <?!= include_('AssistantWidget'); ?>
 </body>
 </html>

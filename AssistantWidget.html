@@ -1,0 +1,486 @@
+<!--
+  =========================================================================
+  AssistantWidget.html — วิดเจ็ตผู้ช่วยตอบคำถามอัตโนมัติ
+  =========================================================================
+  ออกแบบให้ "เบ็ดเสร็จในตัวเอง" คือมี CSS + HTML + JS ครบในไฟล์เดียว
+  ไม่พึ่ง Bootstrap ไม่พึ่ง SharedStyles จึงนำไปแทรกหน้าใดก็ได้ด้วย 1 บรรทัด
+
+  ข้อกำหนดที่ยึดถือ:
+    1) element ราก (#pcAssistantWidget) ต้องเป็น position:fixed ตั้งแต่ต้น
+       เพราะ body ของ Index.html เป็น display:flex ถ้าเป็น static จะกลายเป็น
+       flex item แล้วดันเลย์เอาต์ทั้งหน้า
+    2) z-index 1030 = เหนือเนื้อหา แต่อยู่ใต้ .sidebar-overlay (1040),
+       .sidebar (1050), Bootstrap modal (1055) และ SweetAlert2 (1060)
+       วิดเจ็ตจึงหลบให้เองเมื่อเปิดเมนูมือถือหรือเปิดฟอร์ม
+    3) ทุกคลาสขึ้นต้นด้วย pcw- และทุกฟังก์ชันขึ้นต้นด้วย pcw เพื่อไม่ชนของเดิม
+    4) เรียกเซิร์ฟเวอร์ครั้งแรกตอนผู้ใช้กดเปิดเท่านั้น (lazy)
+       หน้าหลักจึงโหลดเร็วเท่าเดิมทุกมิลลิวินาที
+    5) เซิร์ฟเวอร์คืน JSON เท่านั้น ฝั่งนี้เรนเดอร์ด้วย textContent เสมอ
+  =========================================================================
+-->
+<style>
+  #pcAssistantWidget {
+    position: fixed;
+    right: 20px;
+    bottom: 24px;
+    z-index: 1030;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 10px;
+    font-family: 'Chakra Petch', 'Noto Sans Thai', sans-serif;
+    --pcw-red: #d63031;
+    --pcw-yellow: #ffeaa7;
+    --pcw-cream: #fff5e6;
+    --pcw-ink: #2d3436;
+    --pcw-muted: #636e72;
+    --pcw-line: #f0e6d2;
+  }
+  #pcAssistantWidget * { box-sizing: border-box; }
+
+  .pcw-fab {
+    width: 56px; height: 56px; border-radius: 50%;
+    background: var(--pcw-red); color: #fff; border: none;
+    font-size: 1.35rem; cursor: pointer;
+    box-shadow: 0 6px 18px rgba(214, 48, 49, 0.32);
+    display: flex; align-items: center; justify-content: center;
+    transition: transform 0.18s ease, box-shadow 0.18s ease;
+  }
+  .pcw-fab:hover { transform: translateY(-2px); box-shadow: 0 10px 24px rgba(214, 48, 49, 0.4); }
+  .pcw-fab:focus-visible { outline: 3px solid rgba(214, 48, 49, 0.35); outline-offset: 3px; }
+
+  .pcw-panel {
+    width: 360px;
+    height: min(620px, calc(100vh - 120px));
+    background: #fff;
+    border: 1px solid var(--pcw-line);
+    border-radius: 18px;
+    box-shadow: 0 16px 44px rgba(45, 52, 54, 0.18);
+    display: flex; flex-direction: column; overflow: hidden;
+    transform-origin: bottom right;
+    transition: opacity 0.18s ease, transform 0.18s ease;
+  }
+  .pcw-panel[hidden] { display: none; }
+  .pcw-panel.pcw-enter { opacity: 0; transform: translateY(10px) scale(0.97); }
+
+  .pcw-head {
+    background: var(--pcw-red); color: #fff;
+    padding: 12px 14px; display: flex; align-items: center; gap: 8px; flex: 0 0 auto;
+  }
+  .pcw-head b { font-weight: 600; font-size: 0.95rem; }
+  .pcw-head small { opacity: 0.85; font-size: 0.72rem; display: block; }
+  .pcw-head-spacer { margin-left: auto; }
+  .pcw-icon-btn {
+    background: rgba(255, 255, 255, 0.16); border: none; color: #fff;
+    width: 30px; height: 30px; border-radius: 8px; cursor: pointer; font-size: 1rem; line-height: 1;
+  }
+  .pcw-icon-btn:hover { background: rgba(255, 255, 255, 0.3); }
+
+  .pcw-log { flex: 1 1 auto; overflow-y: auto; padding: 14px; background: #fffdf9; }
+  .pcw-row { display: flex; margin-bottom: 12px; }
+  .pcw-row.pcw-me { justify-content: flex-end; }
+  .pcw-bubble {
+    max-width: 90%; background: #fff; border: 1px solid var(--pcw-line);
+    border-radius: 14px; padding: 10px 12px; font-size: 0.85rem; line-height: 1.55; color: var(--pcw-ink);
+  }
+  .pcw-me .pcw-bubble { background: var(--pcw-cream); border-color: var(--pcw-yellow); }
+  .pcw-bubble p { margin: 0 0 6px; }
+  .pcw-bubble p:last-child { margin-bottom: 0; }
+  .pcw-bubble ul { margin: 4px 0 6px; padding-left: 18px; }
+  .pcw-bubble li { margin-bottom: 3px; }
+
+  .pcw-status { border-radius: 10px; padding: 8px 10px; margin: 6px 0; font-size: 0.83rem; }
+  .pcw-status b { display: block; font-weight: 600; }
+  .pcw-status span { font-size: 0.76rem; opacity: 0.85; }
+  .pcw-t-danger { background: #ffe9e9; color: #a32d2d; }
+  .pcw-t-warn   { background: #fff3e0; color: #8a5300; }
+  .pcw-t-wait   { background: #fff9e0; color: #7a6100; }
+  .pcw-t-ok     { background: #eaf5ff; color: #14548a; }
+  .pcw-t-done   { background: #e9f7ef; color: #1c6b42; }
+  .pcw-t-muted  { background: #f1f2f6; color: #57606f; }
+
+  .pcw-kv { display: grid; grid-template-columns: auto 1fr; gap: 3px 10px; margin: 6px 0; font-size: 0.8rem; }
+  .pcw-kv dt { color: var(--pcw-muted); }
+  .pcw-kv dd { margin: 0; font-weight: 600; }
+
+  .pcw-item { border-top: 1px solid var(--pcw-line); padding: 8px 0; }
+  .pcw-item:first-of-type { border-top: none; }
+  .pcw-item-title { font-weight: 600; font-size: 0.84rem; }
+  .pcw-item-sub { color: var(--pcw-muted); font-size: 0.78rem; margin-top: 2px; }
+  .pcw-badge {
+    display: inline-block; background: var(--pcw-yellow); color: #7a5c00;
+    border-radius: 999px; padding: 1px 8px; font-size: 0.72rem; margin-top: 4px;
+  }
+  .pcw-listhead { font-weight: 600; font-size: 0.82rem; margin: 8px 0 2px; color: var(--pcw-red); }
+
+  .pcw-go {
+    display: inline-block; margin: 6px 6px 0 0; padding: 6px 12px;
+    background: #fff; border: 1px solid var(--pcw-red); color: var(--pcw-red);
+    border-radius: 999px; font-size: 0.78rem; cursor: pointer; font-family: inherit;
+    text-decoration: none;
+  }
+  .pcw-go:hover { background: var(--pcw-red); color: #fff; }
+
+  .pcw-note { color: var(--pcw-muted); font-size: 0.73rem; margin-top: 6px; }
+
+  .pcw-chips { flex: 0 0 auto; display: flex; gap: 6px; overflow-x: auto; padding: 8px 12px; border-top: 1px solid var(--pcw-line); background: #fff; scrollbar-width: none; }
+  .pcw-chips::-webkit-scrollbar { display: none; }
+  .pcw-chip {
+    flex: 0 0 auto; background: var(--pcw-cream); border: 1px solid var(--pcw-yellow);
+    color: var(--pcw-ink); border-radius: 999px; padding: 6px 12px;
+    font-size: 0.76rem; cursor: pointer; white-space: nowrap; font-family: inherit;
+  }
+  .pcw-chip:hover { background: var(--pcw-yellow); }
+
+  .pcw-form { flex: 0 0 auto; display: flex; gap: 6px; padding: 10px 12px; border-top: 1px solid var(--pcw-line); background: #fff; }
+  .pcw-input {
+    flex: 1 1 auto; border: 1px solid var(--pcw-line); border-radius: 999px;
+    padding: 8px 14px; font-size: 0.83rem; font-family: inherit; color: var(--pcw-ink); min-width: 0;
+  }
+  .pcw-input:focus { outline: none; border-color: var(--pcw-red); }
+  .pcw-send {
+    flex: 0 0 auto; width: 38px; height: 38px; border-radius: 50%;
+    background: var(--pcw-red); color: #fff; border: none; cursor: pointer; font-size: 0.95rem;
+  }
+  .pcw-send:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .pcw-foot { flex: 0 0 auto; padding: 6px 12px 10px; font-size: 0.68rem; color: var(--pcw-muted); background: #fff; text-align: center; }
+
+  .pcw-typing span {
+    display: inline-block; width: 6px; height: 6px; margin-right: 3px; border-radius: 50%;
+    background: var(--pcw-muted); animation: pcwBlink 1.2s infinite;
+  }
+  .pcw-typing span:nth-child(2) { animation-delay: 0.2s; }
+  .pcw-typing span:nth-child(3) { animation-delay: 0.4s; }
+  @keyframes pcwBlink { 0%, 60%, 100% { opacity: 0.25; } 30% { opacity: 1; } }
+
+  .pcw-rate { display: flex; gap: 6px; margin-top: 8px; align-items: center; }
+  .pcw-rate button { background: none; border: none; cursor: pointer; font-size: 0.85rem; opacity: 0.55; padding: 2px 4px; }
+  .pcw-rate button:hover, .pcw-rate button.pcw-rated { opacity: 1; }
+
+  @media (max-width: 992px) {
+    #pcAssistantWidget { left: 12px; right: 12px; bottom: 16px; }
+    .pcw-panel { width: auto; height: min(72vh, 540px); }
+    .pcw-fab { width: 52px; height: 52px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .pcw-panel, .pcw-fab { transition: none; }
+    .pcw-typing span { animation: none; opacity: 0.6; }
+  }
+</style>
+
+<div id="pcAssistantWidget" style="display:none">
+  <div class="pcw-panel pcw-enter" id="pcwPanel" hidden role="dialog" aria-label="ผู้ช่วยอัตโนมัติ" aria-modal="false">
+    <div class="pcw-head">
+      <div>
+        <b>ผู้ช่วยอัตโนมัติ</b>
+        <small>ตอบข้อมูลจากระบบศูนย์สารสนเทศกลาง</small>
+      </div>
+      <div class="pcw-head-spacer"></div>
+      <button type="button" class="pcw-icon-btn" id="pcwMinimize" aria-label="พับหน้าต่างผู้ช่วย">&#8211;</button>
+    </div>
+    <div class="pcw-log" id="pcwLog" aria-live="polite"></div>
+    <div class="pcw-chips" id="pcwChips"></div>
+    <div class="pcw-form">
+      <input type="text" class="pcw-input" id="pcwInput" placeholder="พิมพ์คำถาม เช่น บง 123/2569 อยู่ขั้นตอนไหน" maxlength="500" autocomplete="off">
+      <button type="button" class="pcw-send" id="pcwSend" aria-label="ส่งคำถาม">&#10148;</button>
+    </div>
+    <div class="pcw-foot" id="pcwFoot">ผู้ช่วยตอบข้อมูลจากระบบเท่านั้น ไม่สามารถแก้ไขหรือส่งเอกสารแทนท่านได้</div>
+  </div>
+  <button type="button" class="pcw-fab" id="pcwFab" aria-label="เปิดผู้ช่วยอัตโนมัติ" aria-expanded="false">&#128172;</button>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  var pcwReady = false;
+  var pcwBusy = false;
+  var pcwContext = { lastDocumentNumber: '' };
+
+  function el(id) { return document.getElementById(id); }
+  function make(tag, cls, text) {
+    var node = document.createElement(tag);
+    if (cls) node.className = cls;
+    if (text != null) node.textContent = String(text);
+    return node;
+  }
+
+  /* นำทางแบบพกพา: หน้า Index ใช้ goPage() ส่วนหน้า Precheck ใช้ nav() */
+  function pcwNavigate(page, params) {
+    try {
+      if (typeof goPage === 'function') return goPage(page, params || {});
+      if (typeof nav === 'function') return nav(page, params || {});
+    } catch (e) { /* ตกไปใช้วิธีสำรองด้านล่าง */ }
+    var base = window.__PC_BASE_URL || '';
+    if (!base) return;
+    var url = base + '?page=' + encodeURIComponent(page);
+    Object.keys(params || {}).forEach(function (k) {
+      if (!/^[A-Za-z0-9_]+$/.test(k)) return;
+      url += '&' + encodeURIComponent(k) + '=' + encodeURIComponent(String(params[k]));
+    });
+    window.open(url, '_top');
+  }
+
+  function pcwCall(fnName, args) {
+    return new Promise(function (resolve, reject) {
+      google.script.run
+        .withSuccessHandler(resolve)
+        .withFailureHandler(function (e) { reject(new Error(e && e.message ? e.message : String(e))); })
+        [fnName].apply(null, args || []);
+    });
+  }
+
+  /* ---------- การเรนเดอร์ ---------- */
+
+  function pcwAddRow(isMe) {
+    var row = make('div', 'pcw-row' + (isMe ? ' pcw-me' : ''));
+    var bubble = make('div', 'pcw-bubble');
+    row.appendChild(bubble);
+    el('pcwLog').appendChild(row);
+    el('pcwLog').scrollTop = el('pcwLog').scrollHeight;
+    return bubble;
+  }
+
+  function pcwSay(text, isMe) {
+    var bubble = pcwAddRow(isMe === true);
+    bubble.appendChild(make('p', null, text));
+    el('pcwLog').scrollTop = el('pcwLog').scrollHeight;
+    return bubble;
+  }
+
+  function pcwTyping() {
+    var bubble = pcwAddRow(false);
+    var dots = make('div', 'pcw-typing');
+    dots.appendChild(make('span'));
+    dots.appendChild(make('span'));
+    dots.appendChild(make('span'));
+    bubble.appendChild(dots);
+    return bubble.parentNode;
+  }
+
+  function pcwRenderBlock(bubble, block) {
+    if (!block || !block.type) return;
+    switch (block.type) {
+      case 'text':
+        bubble.appendChild(make('p', null, block.text));
+        break;
+      case 'note':
+        bubble.appendChild(make('div', 'pcw-note', block.text));
+        break;
+      case 'bullets': {
+        var ul = make('ul');
+        (block.items || []).forEach(function (item) { ul.appendChild(make('li', null, item)); });
+        bubble.appendChild(ul);
+        break;
+      }
+      case 'steps': {
+        var ol = make('ul');
+        (block.items || []).forEach(function (step) {
+          var li = make('li');
+          li.appendChild(make('b', null, step.title));
+          if (step.detail) { li.appendChild(document.createTextNode(' — ')); li.appendChild(document.createTextNode(step.detail)); }
+          ol.appendChild(li);
+        });
+        bubble.appendChild(ol);
+        break;
+      }
+      case 'status': {
+        var box = make('div', 'pcw-status pcw-t-' + (block.tone || 'muted'));
+        box.appendChild(make('b', null, block.label));
+        if (block.owner) box.appendChild(make('span', null, 'ขณะนี้อยู่ที่: ' + block.owner));
+        bubble.appendChild(box);
+        break;
+      }
+      case 'kv': {
+        var dl = make('dl', 'pcw-kv');
+        (block.items || []).forEach(function (pair) {
+          dl.appendChild(make('dt', null, pair.k));
+          dl.appendChild(make('dd', null, pair.v));
+        });
+        if (dl.childNodes.length) bubble.appendChild(dl);
+        break;
+      }
+      case 'list': {
+        if (block.title) bubble.appendChild(make('div', 'pcw-listhead', block.title));
+        (block.items || []).forEach(function (item) {
+          var wrap = make('div', 'pcw-item');
+          wrap.appendChild(make('div', 'pcw-item-title', item.title));
+          if (item.subtitle) wrap.appendChild(make('div', 'pcw-item-sub', item.subtitle));
+          if (item.badge) wrap.appendChild(make('div', 'pcw-badge', item.badge));
+          if (item.note) wrap.appendChild(make('div', 'pcw-note', item.note));
+          if (item.action && item.action.page) {
+            var btn = make('button', 'pcw-go', item.action.label || 'เปิด');
+            btn.type = 'button';
+            btn.addEventListener('click', function () { pcwNavigate(item.action.page, item.action.params); });
+            wrap.appendChild(btn);
+          }
+          bubble.appendChild(wrap);
+        });
+        break;
+      }
+      case 'action': {
+        var go = make('button', 'pcw-go', block.label);
+        go.type = 'button';
+        go.addEventListener('click', function () { pcwNavigate(block.page, block.params); });
+        bubble.appendChild(go);
+        break;
+      }
+      case 'link': {
+        if (!/^https?:\/\//i.test(String(block.url || ''))) break;
+        var a = make('a', 'pcw-go', block.label);
+        a.href = block.url;
+        a.target = '_blank';
+        a.rel = 'noopener noreferrer';
+        bubble.appendChild(a);
+        break;
+      }
+      default:
+        break;
+    }
+  }
+
+  function pcwRenderChips(chips) {
+    var bar = el('pcwChips');
+    bar.innerHTML = '';
+    (chips || []).forEach(function (chip) {
+      var btn = make('button', 'pcw-chip', chip.label);
+      btn.type = 'button';
+      btn.addEventListener('click', function () { pcwQuick(chip.intent, chip.params, chip.label); });
+      bar.appendChild(btn);
+    });
+  }
+
+  function pcwRenderRating(bubble, replyId) {
+    if (!replyId) return;
+    var bar = make('div', 'pcw-rate');
+    bar.appendChild(make('span', 'pcw-note', 'คำตอบนี้มีประโยชน์ไหม'));
+    [['\uD83D\uDC4D', true], ['\uD83D\uDC4E', false]].forEach(function (pair) {
+      var btn = make('button', null, pair[0]);
+      btn.type = 'button';
+      btn.setAttribute('aria-label', pair[1] ? 'มีประโยชน์' : 'ไม่มีประโยชน์');
+      btn.addEventListener('click', function () {
+        btn.classList.add('pcw-rated');
+        Array.prototype.forEach.call(bar.querySelectorAll('button'), function (b) { b.disabled = true; });
+        pcwCall('assistantFeedback', [replyId, pair[1]]).catch(function () {});
+      });
+      bar.appendChild(btn);
+    });
+    bubble.appendChild(bar);
+  }
+
+  function pcwRenderReply(reply) {
+    var bubble = pcwAddRow(false);
+    (reply.blocks || []).forEach(function (block) { pcwRenderBlock(bubble, block); });
+    if (!bubble.childNodes.length) bubble.appendChild(make('p', null, 'ขออภัยครับ ยังไม่มีข้อมูลสำหรับคำถามนี้'));
+    pcwRenderRating(bubble, reply.replyId);
+    if (reply.chips && reply.chips.length) pcwRenderChips(reply.chips);
+    if (reply.documentNumber) pcwContext.lastDocumentNumber = reply.documentNumber;
+    if (reply.needs && reply.needs.prompt) el('pcwInput').placeholder = reply.needs.prompt;
+    el('pcwLog').scrollTop = el('pcwLog').scrollHeight;
+  }
+
+  /* ---------- การสื่อสารกับเซิร์ฟเวอร์ ---------- */
+
+  function pcwSetBusy(state) {
+    pcwBusy = state;
+    el('pcwSend').disabled = state;
+    el('pcwInput').disabled = state;
+  }
+
+  function pcwHandle(promise) {
+    var typing = pcwTyping();
+    pcwSetBusy(true);
+    promise
+      .then(function (reply) {
+        typing.parentNode.removeChild(typing);
+        pcwRenderReply(reply || {});
+      })
+      .catch(function (err) {
+        typing.parentNode.removeChild(typing);
+        pcwSay(err && err.message ? err.message : 'ระบบไม่สามารถตอบได้ในขณะนี้ กรุณาลองใหม่อีกครั้ง');
+      })
+      .then(function () { pcwSetBusy(false); });
+  }
+
+  function pcwAsk() {
+    if (pcwBusy) return;
+    var input = el('pcwInput');
+    var text = String(input.value || '').trim();
+    if (!text) return;
+    input.value = '';
+    pcwSay(text, true);
+    pcwHandle(pcwCall('assistantAsk', [text, pcwContext]));
+  }
+
+  function pcwQuick(intent, params, label) {
+    if (pcwBusy || !intent) return;
+    if (label) pcwSay(label, true);
+    pcwHandle(pcwCall('assistantQuickAction', [intent, params || {}]));
+  }
+
+  /* ---------- เปิด/ปิด ---------- */
+
+  function pcwOpen() {
+    var panel = el('pcwPanel');
+    panel.hidden = false;
+    requestAnimationFrame(function () { panel.classList.remove('pcw-enter'); });
+    el('pcwFab').setAttribute('aria-expanded', 'true');
+    el('pcwFab').hidden = true;
+    if (!pcwReady) { pcwReady = true; pcwBootstrap(); }
+    setTimeout(function () { try { el('pcwInput').focus(); } catch (e) {} }, 220);
+  }
+
+  function pcwClose() {
+    var panel = el('pcwPanel');
+    panel.classList.add('pcw-enter');
+    el('pcwFab').hidden = false;
+    el('pcwFab').setAttribute('aria-expanded', 'false');
+    setTimeout(function () { panel.hidden = true; }, 180);
+  }
+
+  function pcwBootstrap() {
+    var typing = pcwTyping();
+    pcwCall('assistantBootstrap', [])
+      .then(function (info) {
+        typing.parentNode.removeChild(typing);
+        if (!info || !info.enabled) {
+          pcwSay((info && info.message) || 'ผู้ช่วยอัตโนมัติยังไม่เปิดใช้งาน');
+          el('pcwInput').disabled = true;
+          el('pcwSend').disabled = true;
+          return;
+        }
+        pcwSay(info.greeting || 'สวัสดีครับ');
+        pcwRenderChips(info.chips || []);
+        if (info.disclaimer) el('pcwFoot').textContent = info.disclaimer;
+      })
+      .catch(function (err) {
+        typing.parentNode.removeChild(typing);
+        pcwSay(err && err.message ? err.message : 'ไม่สามารถเชื่อมต่อผู้ช่วยได้ในขณะนี้');
+      });
+  }
+
+  /* ---------- ผูก event ---------- */
+
+  el('pcwFab').addEventListener('click', pcwOpen);
+  el('pcwMinimize').addEventListener('click', pcwClose);
+  el('pcwSend').addEventListener('click', pcwAsk);
+  el('pcwInput').addEventListener('keydown', function (e) {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); pcwAsk(); }
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && !el('pcwPanel').hidden) pcwClose();
+  });
+
+  window.pcwOpenAssistant = pcwOpen;
+
+  /* หน้าเจ้าบ้านเรียกฟังก์ชันนี้เพื่อเปิดเผยวิดเจ็ต ค่าตั้งต้นคือซ่อน (fail-closed)
+     หน้าใดที่ยังไม่ได้เรียก วิดเจ็ตจะไม่ปรากฏ จึงไม่มีทางโผล่ในหน้าที่ไม่ได้ตั้งใจ */
+  window.pcwSetAvailable = function (available) {
+    var root = el('pcAssistantWidget');
+    if (!root) return;
+    root.style.display = available ? 'flex' : 'none';
+    if (!available) { try { pcwClose(); } catch (e) {} }
+  };
+})();
+</script>

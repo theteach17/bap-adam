@@ -2,7 +2,12 @@
 function getNavigationContext(){
   try{
     var principal=getCurrentPrincipal_(),cfg=getPrecheckConfig_();
-    return{appName:PC_CONST.USER_FACING_NAME,baseUrl:ScriptApp.getService().getUrl(),displayName:principal.displayName,email:principal.email,roles:principal.roles.slice(),precheckEnabled:cfg.enabled,enforceReportActivity:cfg.enforceReportActivity,maxFileMb:cfg.maxFileMb,chunkSizeBytes:cfg.chunkSizeBytes};
+    /* [ASSISTANT PATCH] เพิ่ม property เดียวแบบไม่แตะค่าเดิม เพื่อให้หน้าเว็บซ่อน/แสดง
+       ปุ่มผู้ช่วยได้โดยไม่ต้องเรียกเซิร์ฟเวอร์เพิ่มอีกรอบ ความล้มเหลวของการอ่าน
+       คอนฟิกผู้ช่วยต้องไม่ทำให้ navigation context เดิมพังเด็ดขาด */
+    var assistantEnabled=false;
+    try{assistantEnabled=asAvailableFor_(principal);}catch(ignored){assistantEnabled=false;}
+    return{appName:PC_CONST.USER_FACING_NAME,baseUrl:ScriptApp.getService().getUrl(),displayName:principal.displayName,email:principal.email,roles:principal.roles.slice(),precheckEnabled:cfg.enabled,enforceReportActivity:cfg.enforceReportActivity,maxFileMb:cfg.maxFileMb,chunkSizeBytes:cfg.chunkSizeBytes,assistantEnabled:assistantEnabled};
   }catch(error){throw pcHandlePublicError_(error,'getNavigationContext',{});}
 }
 

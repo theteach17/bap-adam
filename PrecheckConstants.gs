@@ -88,5 +88,10 @@ var PC_HEADERS = Object.freeze({
   PC_QuickComments: ['QuickCommentId','GroupId','Label','FullText','Active','SortOrder'],
   PC_Access: ['Email','Role','DisplayName','Active','CreatedAt','UpdatedAt'],
   PC_Notifications: ['NotificationId','SubmissionId','VersionId','EventType','Recipient','CC','Subject','BodyPayload','Status','AttemptCount','CreatedAt','LastAttemptAt','NextAttemptAt','SentAt','ErrorCode','ErrorMessage'],
-  PC_Audit: ['AuditId','Timestamp','ActorUsername','ActorName','ActorEmail','ActorRole','Action','SubmissionId','VersionId','ReviewId','PreviousStatus','NewStatus','MetadataJSON','CorrelationId']
+  PC_Audit: ['AuditId','Timestamp','ActorUsername','ActorName','ActorEmail','ActorRole','Action','SubmissionId','VersionId','ReviewId','PreviousStatus','NewStatus','MetadataJSON','CorrelationId'],
+  /* [ASSISTANT PATCH] ต้องอยู่ท้ายสุดเสมอ เพราะ pcInitializeWorkflowSheets_ มีเงื่อนไข
+     พิเศษที่ index===0 (จะ rename Sheet1 เป็นชีตแรก) การแทรกไว้ตำแหน่งอื่นจะเปลี่ยน
+     ลำดับของชีตเดิม การเพิ่ม key ท้ายสุดทำให้ setupPrecheckSystem() สร้างชีตนี้ให้
+     อัตโนมัติ และ runPrecheckHealthCheck() ตรวจ schema ให้เองโดยไม่ต้องแก้โค้ดเพิ่ม */
+  PC_AssistantLog: ['LogId','Timestamp','Username','RawMessage','Intent','Confidence','Matched','EntitiesJSON','TookMs','Helpful']
 });
