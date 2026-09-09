@@ -798,10 +798,16 @@ function saveData(reportName, adminGroup, workGroup, responsiblePerson, actionPl
     throw new Error(getReportNamePrefixErrorMessage_(reportNameValidation));
   }
 
+  // [PATCH] ป้องกันการบันทึกเอกสารในโครงการตามแผนปฏิบัติการโดยไม่มีรหัสกิจกรรม
+  // ตรวจที่ Server ซ้ำเพื่อป้องกันการข้าม validation จากแท็บเก่าหรือการเรียกฟังก์ชันโดยตรง
+  if (!activityCode && actionPlanProject !== 'เอกสารที่ไม่อยู่ในโครงการใด') {
+    throw new Error('ต้องระบุรหัสกิจกรรมให้ถูกต้องก่อนจึงจะดำเนินการบันทึกข้อมูลต่อได้');
+  }
+
   if (activityCode) {
     var activityInfo = getActivityInfo(activityCode);
     if (!activityInfo) {
-      throw new Error('ไม่พบรหัสกิจกรรมนี้ในฐานข้อมูล LinkBAP กรุณาตรวจสอบรหัสกิจกรรมให้ถูกต้อง หรือเว้นว่างไว้หากต้องการกรอกข้อมูลเอง');
+      throw new Error('ไม่พบรหัสกิจกรรมนี้ในฐานข้อมูล LinkBAP กรุณาตรวจสอบรหัสกิจกรรมให้ถูกต้อง');
     }
     activityName = String(activityInfo.activityName || activityName || '').trim();
     if (!activityName) {
@@ -809,10 +815,10 @@ function saveData(reportName, adminGroup, workGroup, responsiblePerson, actionPl
     }
   } else {
     if (!activityName) {
-      throw new Error('กรณีไม่กรอกรหัสกิจกรรม ต้องกรอกชื่อกิจกรรม');
+      throw new Error('กรุณากรอกชื่อกิจกรรม');
     }
     if (activityName.indexOf('กิจกรรม') !== 0) {
-      throw new Error('กรณีไม่กรอกรหัสกิจกรรม ชื่อกิจกรรมต้องขึ้นต้นด้วยคำว่า "กิจกรรม"');
+      throw new Error('ชื่อกิจกรรมต้องขึ้นต้นด้วยคำว่า "กิจกรรม"');
     }
   }
 
