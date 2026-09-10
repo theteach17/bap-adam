@@ -25,6 +25,22 @@ function asNormalizePersonName_(value) {
   return text.replace(/\s+/g, '').toLowerCase();
 }
 
+/**
+ * ตรวจว่าตัวตนของผู้ใช้ถูกแยกเป็นสองส่วนหรือไม่
+ * pcBuildCurrentPrincipal_ ใช้ email = activeEmail || credentialEmail
+ * ถ้าผู้ใช้ล็อกอินเบราว์เซอร์ด้วยบัญชี Google หนึ่ง แต่เข้าระบบด้วย username ของอีกคน
+ * จะได้ email ของคนแรกแต่ displayName ของคนหลัง ซึ่งอันตรายต่อการจับคู่ด้วยชื่อ
+ */
+function asIdentityIsSplit_(principal) {
+  try {
+    var activeEmail = pcKey_(Session.getActiveUser().getEmail());
+    if (!activeEmail) return false;
+    var credentialEmail = pcKey_(pcCredentialEmailForUsername_(principal && principal.username));
+    if (!credentialEmail) return false;
+    return activeEmail !== credentialEmail;
+  } catch (ignored) { return false; }
+}
+
 /** อ่านทะเบียนเอกสารทั้งใบแบบจำกัดคอลัมน์ (A:L) หนึ่งครั้งต่อ execution */
 function asMasterRows_() {
   return pcMemo_('as:masterRows', function() {
@@ -139,6 +155,10 @@ function asMyWorkload_(principal, cfg, bypassCache, includeAllYears) {
   }
 
   var allowNameMatch = pcBool_((cfg || {}).assistNameMatch, true);
+  // ถ้าอีเมลบัญชี Google ไม่ตรงกับอีเมลใน Credential ของ username ที่ล็อกอินอยู่
+  // แปลว่าตัวตนถูกแยกเป็นสองส่วน (email เป็นของคนหนึ่ง ชื่อเป็นของอีกคนหนึ่ง)
+  // การจับคู่ด้วยชื่อในสถานการณ์นี้จะดึงเอกสารของเจ้าของชื่อมาแสดง จึงต้องปิดทันที
+  if (allowNameMatch && asIdentityIsSplit_(principal)) allowNameMatch = false;
   var fromYear = includeAllYears === true ? 0 : pcInt_((cfg || {}).assistWorkloadFromYear, 0, 0, 3000);
   var myName = asNormalizePersonName_(principal && principal.displayName);
   var rows = asMasterRows_();

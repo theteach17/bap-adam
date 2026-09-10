@@ -121,6 +121,13 @@ function assistantAsk(message, context) {
     var safeContext = asSafeContext_(context);
     var parsed = asClassify_(raw, safeContext, guard.principal);
     var answer = asBuildAnswer_(parsed.intent, parsed.documentNumber, guard.principal, guard.cfg, false);
+
+    // ผู้ใช้เอ่ยชื่อคนอื่น เช่น "งานค้างของครูสมชาย" แต่ระบบตอบด้วยงานของผู้ถามเสมอ
+    // ต้องบอกให้ชัด ไม่เช่นนั้นผู้ใช้จะเข้าใจว่ารายการที่เห็นเป็นของคนที่เอ่ยถึง
+    if (parsed.mentionsOtherPerson && String(parsed.intent).indexOf('MY_') === 0) {
+      answer.blocks = [asNote_('ผมแสดงได้เฉพาะเอกสารในความรับผิดชอบของท่านเองครับ ไม่สามารถดูรายการของผู้อื่นได้ หากต้องการตรวจสอบเอกสารของผู้อื่น กรุณาระบุเลขเอกสารแทน')]
+        .concat(answer.blocks || []);
+    }
     return asFinalizeReply_(parsed, answer, guard, raw, started);
   } catch (error) {
     throw pcHandlePublicError_(error, 'assistantAsk', {});

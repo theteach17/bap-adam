@@ -79,6 +79,21 @@ function asScoreIntents_(normalizedText) {
   return scores;
 }
 
+/**
+ * ตรวจว่าข้อความเอ่ยถึง "บุคคลอื่น" หรือไม่ เช่น "งานค้างของครูสมชาย"
+ * ระบบตอบด้วยงานของผู้ถามเสมอ ถ้าไม่บอกให้ชัด ผู้ใช้อาจเข้าใจผิดว่าเป็นของคนที่เอ่ยถึง
+ */
+var AS_THIRD_PERSON_MARKERS = Object.freeze(['ของครู','ของนาย','ของนาง','ของนางสาว','ของคุณ','ของอาจารย์','ของผอ','ของรอง','ของท่านอื่น','ของเพื่อน']);
+
+function asMentionsOtherPerson_(normalizedText) {
+  var text = String(normalizedText || '');
+  if (asHasPersonalMarker_(text)) return false;
+  for (var i = 0; i < AS_THIRD_PERSON_MARKERS.length; i++) {
+    if (text.indexOf(AS_THIRD_PERSON_MARKERS[i]) !== -1) return true;
+  }
+  return false;
+}
+
 /** ตรวจว่าข้อความอ้างถึงงานของผู้ถามเองหรือไม่ */
 function asHasPersonalMarker_(normalizedText) {
   var text = String(normalizedText || '');
@@ -97,6 +112,7 @@ function asClassify_(rawText, context, principal) {
   var documentNumber = asExtractDocumentNumber_(text);
   var scores = asScoreIntents_(text);
   var personal = asHasPersonalMarker_(text);
+  var otherPerson = asMentionsOtherPerson_(text);
   var isOfficer = asIsOfficer_(principal);
 
   // เอกสารที่อ้างถึงก่อนหน้า ใช้เติมช่องว่างเท่านั้น ไม่ใช้ตัดสินสิทธิ์
@@ -122,8 +138,8 @@ function asClassify_(rawText, context, principal) {
 
   // ไม่มีคำสำคัญเลย แต่พิมพ์เลขเอกสารมา ให้ถือว่าถามสถานะ
   if (!ranked.length) {
-    if (documentNumber) return { intent: AS_CONST.INTENT.DOC_STATUS, confidence: 0.72, documentNumber: documentNumber, alternatives: [] };
-    return { intent: AS_CONST.INTENT.UNKNOWN, confidence: 0, documentNumber: '', alternatives: [] };
+    if (documentNumber) return { intent: AS_CONST.INTENT.DOC_STATUS, confidence: 0.72, documentNumber: documentNumber, alternatives: [], mentionsOtherPerson: otherPerson };
+    return { intent: AS_CONST.INTENT.UNKNOWN, confidence: 0, documentNumber: '', alternatives: [], mentionsOtherPerson: otherPerson };
   }
 
   var best = ranked[0];
@@ -133,13 +149,13 @@ function asClassify_(rawText, context, principal) {
   // จึงถือว่าไม่กำกวมและรับได้ ถ้ามีเจตนาอื่นแข่งด้วยจึงค่อยบังคับใช้เกณฑ์คะแนน
   var unambiguous = ranked.length === 1;
   if (bestScore < AS_CONST.LIMITS.MIN_INTENT_SCORE && !unambiguous) {
-    if (documentNumber) return { intent: AS_CONST.INTENT.DOC_STATUS, confidence: 0.6, documentNumber: documentNumber, alternatives: [] };
-    return { intent: AS_CONST.INTENT.UNKNOWN, confidence: 0, documentNumber: '', alternatives: [] };
+    if (documentNumber) return { intent: AS_CONST.INTENT.DOC_STATUS, confidence: 0.6, documentNumber: documentNumber, alternatives: [], mentionsOtherPerson: otherPerson };
+    return { intent: AS_CONST.INTENT.UNKNOWN, confidence: 0, documentNumber: '', alternatives: [], mentionsOtherPerson: otherPerson };
   }
 
   // เจตนาที่ต้องมีเลขเอกสารแต่ผู้ใช้ยังไม่ได้ระบุ
   if (AS_CONST.DOC_INTENTS.indexOf(best) !== -1 && !documentNumber) {
-    return { intent: AS_CONST.INTENT.NEED_DOCUMENT_NUMBER, confidence: 0.8, documentNumber: '', alternatives: [best] };
+    return { intent: AS_CONST.INTENT.NEED_DOCUMENT_NUMBER, confidence: 0.8, documentNumber: '', alternatives: [best], mentionsOtherPerson: otherPerson };
   }
 
   var second = ranked.length > 1 ? scores[ranked[1]] : 0;
@@ -148,7 +164,8 @@ function asClassify_(rawText, context, principal) {
     intent: best,
     confidence: Math.round(confidence * 100) / 100,
     documentNumber: documentNumber,
-    alternatives: ranked.slice(1, 3)
+    alternatives: ranked.slice(1, 3),
+    mentionsOtherPerson: otherPerson
   };
 }
 
