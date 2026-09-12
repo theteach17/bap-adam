@@ -12,7 +12,8 @@ function setupKpiSatellite(){
   var snapshot=kpiRunTrackedJob_('QUEUE_SNAPSHOT','SETUP',takeKpiQueueSnapshotCore_);
   var triggers=kpiInstallTriggers_();
   var health=runKpiHealthCheckCore_();
-  console.log('[KPI SETUP] COMPLETE health='+health.ok+' failed='+health.failedCount);
+  kpiLogHealthResult_(health,'SETUP');
+  console.log('[KPI SETUP] COMPLETE health='+health.ok+' failed='+health.failedCount+(health.failedChecks&&health.failedChecks.length?' failedChecks='+health.failedChecks.map(function(x){return x.name;}).join(', '):''));
   return {ok:health.ok,moduleVersion:KPI_CONST.VERSION,runner:runner.email,dbId:kpiSatelliteDbId_(),handoffSecret:createdSecret?secret:'(existing secret preserved — run getKpiSatelliteIntegrationInfo() if needed)',removedOldTriggers:removedTriggers,triggers:triggers,reconcile:reconcile,aggregate:aggregate,snapshot:snapshot,health:health,nextStep:'Deploy as Web app Execute as Me, then copy deployment URL + handoff secret into Project Adam Script Properties.'};
 }
 

@@ -1,7 +1,18 @@
 /** Read-only diagnostics for Satellite runtime. */
 function runKpiHealthCheckCore_(){
-  var result={ok:true,moduleVersion:KPI_CONST.VERSION,runner:'',checkedAt:kpiNowIso_(),checks:[],failedCount:0,warnings:[]};
-  function check(name,fn){try{var detail=fn();result.checks.push({name:name,ok:true,detail:detail});}catch(e){result.ok=false;result.failedCount++;result.checks.push({name:name,ok:false,error:String(e&&e.message||e)});}}
+  var result={ok:true,moduleVersion:KPI_CONST.VERSION,runner:'',checkedAt:kpiNowIso_(),checks:[],failedCount:0,failedChecks:[],warnings:[]};
+  function check(name,fn){
+    try{
+      var detail=fn();
+      result.checks.push({name:name,ok:true,detail:detail});
+    }catch(e){
+      var message=String(e&&e.message||e);
+      result.ok=false;
+      result.failedCount++;
+      result.failedChecks.push({name:name,error:message});
+      result.checks.push({name:name,ok:false,error:message});
+    }
+  }
   check('runner',function(){result.runner=kpiAssertSatelliteRunner_();return result.runner;});
   check('database',function(){return{id:kpiDb_().getId(),name:kpiDb_().getName()};});
   check('timezone',function(){var scriptTz=Session.getScriptTimeZone(),sheetTz=kpiDb_().getSpreadsheetTimeZone();if(scriptTz!==KPI_CONST.TIMEZONE||sheetTz!==KPI_CONST.TIMEZONE)throw new Error('timezone mismatch script='+scriptTz+' sheet='+sheetTz+' expected='+KPI_CONST.TIMEZONE);return{script:scriptTz,spreadsheet:sheetTz};});
@@ -14,5 +25,46 @@ function runKpiHealthCheckCore_(){
   check('data-health',function(){var h=kpiDataHealth_(kpiLoadModel_({includeAudit:false}));if(h.status!=='HEALTHY')throw new Error('data health '+h.status+'; missingEvents='+h.missingCompletedReviewEvents+'; staleJobs='+h.staleJobRuns);return h;});
   return result;
 }
-function runKpiHealthCheck(){kpiRequireAdminEditor_();return runKpiHealthCheckCore_();}
-function runKpiProductionSmokeTest(){kpiRequireAdminEditor_();var cfg=kpiGetConfig_(),model=kpiLoadModel_({includeAudit:false}),today=kpiDateKey_(new Date()),filter={startDate:kpiAddDateKey_(today,-29),endDate:today,officerEmail:'',adminGroup:'',workGroup:''},metrics=kpiBuildReviewMetrics_(model,filter,cfg),table=kpiOfficerTable_(model,metrics,filter,cfg),queue=kpiQueueHealth_(model,cfg);return{ok:true,reviewMetrics:metrics.length,officers:table.length,queue:queue,businessTimeSelfTest:kpiBusinessMinutes_('2026-09-14T08:00:00+07:00','2026-09-14T09:30:00+07:00',cfg,{})};}
+
+/** Human-readable execution log. Never logs secrets or session tokens. */
+function kpiLogHealthResult_(result,label){
+  result=result||{};
+  var prefix='[KPI HEALTH'+(label?' '+String(label):'')+']';
+  console.log(prefix+' START version='+(result.moduleVersion||KPI_CONST.VERSION)+' checkedAt='+(result.checkedAt||kpiNowIso_()));
+  (result.checks||[]).forEach(function(c){
+    if(c.ok){
+      var detail='';
+      try{detail=JSON.stringify(c.detail==null?{}:c.detail);}catch(ignored){detail=String(c.detail||'');}
+      if(detail.length>500)detail=detail.slice(0,500)+'…';
+      console.log(prefix+' PASS '+c.name+(detail?' — '+detail:''));
+    }else{
+      console.error(prefix+' FAIL '+c.name+' — '+String(c.error||'unknown error'));
+    }
+  });
+  (result.warnings||[]).forEach(function(w){console.warn(prefix+' WARN '+String(w));});
+  if(result.ok){console.log(prefix+' COMPLETE ok=true failed=0');}
+  else{
+    var names=(result.failedChecks||[]).map(function(x){return x.name;}).join(', ');
+    console.error(prefix+' COMPLETE ok=false failed='+Number(result.failedCount||0)+(names?' failedChecks='+names:''));
+  }
+  return result;
+}
+
+/** Editor entry point: logs every check and also returns structured data. */
+function runKpiHealthCheck(){
+  kpiRequireAdminEditor_();
+  return kpiLogHealthResult_(runKpiHealthCheckCore_(),'MANUAL');
+}
+
+/** Convenience alias for administrators who want an explicitly named verbose check. */
+function runKpiHealthCheckVerbose(){
+  return runKpiHealthCheck();
+}
+
+function runKpiProductionSmokeTest(){
+  kpiRequireAdminEditor_();
+  console.log('[KPI SMOKE] START v'+KPI_CONST.VERSION);
+  var cfg=kpiGetConfig_(),model=kpiLoadModel_({includeAudit:false}),today=kpiDateKey_(new Date()),filter={startDate:kpiAddDateKey_(today,-29),endDate:today,officerEmail:'',adminGroup:'',workGroup:''},metrics=kpiBuildReviewMetrics_(model,filter,cfg),table=kpiOfficerTable_(model,metrics,filter,cfg),queue=kpiQueueHealth_(model,cfg),result={ok:true,moduleVersion:KPI_CONST.VERSION,reviewMetrics:metrics.length,officers:table.length,queue:queue,businessTimeSelfTest:kpiBusinessMinutes_('2026-09-14T08:00:00+07:00','2026-09-14T09:30:00+07:00',cfg,{})};
+  console.log('[KPI SMOKE] COMPLETE '+JSON.stringify(result));
+  return result;
+}
