@@ -75,7 +75,7 @@ function saveAdminKpiHoliday(entry) {
   var principal=getCurrentPrincipal_();entry=entry||{};
   var date=String(entry.date||'').trim();if(!/^\d{4}-\d{2}-\d{2}$/.test(date)||kpiDateKey_(new Date(date+'T12:00:00+07:00'))!==date)throw pcUserError_('วันที่ต้องเป็น YYYY-MM-DD ที่ถูกต้อง','KPI_HOLIDAY_DATE');
   var isWorking=/^(true|1|yes|y)$/i.test(String(entry.isWorkingDay));
-  var start=String(entry.startTime||'').trim(),end=String(entry.endTime||'').trim();
+  var start=kpiNormalizeClockValue_(entry.startTime,''),end=kpiNormalizeClockValue_(entry.endTime,'');
   if(start&&!/^\d{2}:\d{2}$/.test(start))throw pcUserError_('StartTime ต้องเป็น HH:mm','KPI_HOLIDAY_TIME');
   if(end&&!/^\d{2}:\d{2}$/.test(end))throw pcUserError_('EndTime ต้องเป็น HH:mm','KPI_HOLIDAY_TIME');
   var rows=kpiReadObjects_(KPI_CONST.SHEETS.HOLIDAYS,KPI_HEADERS.PC_KPIHolidays),found=-1;for(var i=0;i<rows.length;i++)if(kpiDateKey_(rows[i].Date)===date){found=i;break;}
@@ -96,4 +96,4 @@ function deleteAdminKpiHoliday(date) {
 }
 
 /** Browser-safe holiday override list. */
-function kpiGetHolidaysForUi_(){return kpiReadObjects_(KPI_CONST.SHEETS.HOLIDAYS,KPI_HEADERS.PC_KPIHolidays).map(function(r){return{date:kpiDateKey_(r.Date),isWorkingDay:r.IsWorkingDay===true||/^(true|1|yes|y)$/i.test(String(r.IsWorkingDay)),startTime:String(r.StartTime||''),endTime:String(r.EndTime||''),description:String(r.Description||'')};}).filter(function(r){return!!r.date;}).sort(function(a,b){return a.date.localeCompare(b.date);});}
+function kpiGetHolidaysForUi_(){return kpiReadObjects_(KPI_CONST.SHEETS.HOLIDAYS,KPI_HEADERS.PC_KPIHolidays).map(function(r){return{date:kpiDateKey_(r.Date),isWorkingDay:r.IsWorkingDay===true||/^(true|1|yes|y)$/i.test(String(r.IsWorkingDay)),startTime:kpiNormalizeClockValue_(r.StartTime,''),endTime:kpiNormalizeClockValue_(r.EndTime,''),description:String(r.Description||'')};}).filter(function(r){return!!r.date;}).sort(function(a,b){return a.date.localeCompare(b.date);});}

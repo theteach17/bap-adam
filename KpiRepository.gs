@@ -100,19 +100,52 @@ function kpiEnsureSheet_(name, headers) {
   return sheet;
 }
 
+/** Normalizes a clock value from Google Sheets to canonical HH:mm.
+ * Google Sheets may store a time-looking string as a TIME serial number or Date.
+ * This helper accepts String / Number / Date without changing the intended clock time.
+ */
+function kpiNormalizeClockValue_(value, fallback) {
+  fallback = fallback == null ? '' : String(fallback);
+  if (value == null || value === '') return fallback;
+  function fromMinutes_(minutes) {
+    minutes = ((Math.round(minutes) % 1440) + 1440) % 1440;
+    var h = Math.floor(minutes / 60), m = minutes % 60;
+    return ('0' + h).slice(-2) + ':' + ('0' + m).slice(-2);
+  }
+  if (value instanceof Date && isFinite(value.getTime())) {
+    // KPI timezone is pinned to Asia/Bangkok (UTC+07, no DST). Avoid historical
+    // 1899 timezone offsets that Utilities.formatDate may apply to Sheets TIME dates.
+    var shifted = new Date(value.getTime() + 7 * 60 * 60 * 1000);
+    return ('0' + shifted.getUTCHours()).slice(-2) + ':' + ('0' + shifted.getUTCMinutes()).slice(-2);
+  }
+  if (typeof value === 'number' && isFinite(value)) {
+    var fraction = ((value % 1) + 1) % 1;
+    return fromMinutes_(fraction * 1440);
+  }
+  var text = String(value).trim();
+  var match = /^(\d{1,2}):(\d{2})(?::\d{2})?$/.exec(text);
+  if (match) {
+    var h = Number(match[1]), m = Number(match[2]);
+    if (h >= 0 && h < 24 && m >= 0 && m < 60) return ('0' + h).slice(-2) + ':' + ('0' + m).slice(-2);
+  }
+  var numeric = Number(text);
+  if (text !== '' && isFinite(numeric) && numeric >= 0 && numeric < 1) return fromMinutes_(numeric * 1440);
+  return text || fallback;
+}
+
 /** Returns KPI configuration as normalized object. */
 function kpiGetConfig_() {
   if (KPI_REPO_MEMO_.config) return KPI_REPO_MEMO_.config;
   var rows = kpiReadObjects_(KPI_CONST.SHEETS.CONFIG, KPI_HEADERS.PC_KPIConfig);
   var raw = {};
-  rows.forEach(function(r) { raw[String(r.Key || '').trim()] = String(r.Value == null ? '' : r.Value).trim(); });
+  rows.forEach(function(r) { var key=String(r.Key || '').trim(), value=r.Value; raw[key] = (key===KPI_CONST.CONFIG.WORKDAY_START || key===KPI_CONST.CONFIG.WORKDAY_END) ? kpiNormalizeClockValue_(value, '') : String(value == null ? '' : value).trim(); });
   function bool(key, fallback) { var v = raw[key]; return v === '' || v == null ? fallback : /^(true|1|yes|y)$/i.test(v); }
   function num(key, fallback, min, max) { var n = Number(raw[key]); if (!isFinite(n)) n = fallback; if (min != null) n = Math.max(min, n); if (max != null) n = Math.min(max, n); return n; }
   var cfg = {
     enabled: bool(KPI_CONST.CONFIG.ENABLED, true),
     baselineMode: bool(KPI_CONST.CONFIG.BASELINE_MODE, true),
     scoreEnabled: bool(KPI_CONST.CONFIG.SCORE_ENABLED, false),
-    assignmentMode: KPI_CONST.ASSIGNMENT_MODE.OFF, // v1.1.0 safety lock: analytics only; no workflow assignment side effects
+    assignmentMode: KPI_CONST.ASSIGNMENT_MODE.OFF, // v1.1.2 safety lock: analytics only; no workflow assignment side effects
     workdayStart: raw[KPI_CONST.CONFIG.WORKDAY_START] || '08:00',
     workdayEnd: raw[KPI_CONST.CONFIG.WORKDAY_END] || '16:30',
     workingDays: (raw[KPI_CONST.CONFIG.WORKING_DAYS] || '1,2,3,4,5').split(',').map(Number).filter(function(n){return n>=1&&n<=7;}),
@@ -147,7 +180,7 @@ function kpiGetHolidayMap_() {
     if (!key) return;
     map[key] = {
       isWorkingDay: /^(true|1|yes|y)$/i.test(String(r.IsWorkingDay)),
-      startTime: String(r.StartTime || ''), endTime: String(r.EndTime || ''), description: String(r.Description || '')
+      startTime: kpiNormalizeClockValue_(r.StartTime, ''), endTime: kpiNormalizeClockValue_(r.EndTime, ''), description: String(r.Description || '')
     };
   });
   KPI_REPO_MEMO_.holidays = map;
