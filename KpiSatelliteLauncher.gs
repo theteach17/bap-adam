@@ -15,4 +15,60 @@ function kpiMainTicket_(){
   return{url:url,ticket:body+'.'+sig,expiresAt:new Date(payload.exp*1000).toISOString()};
 }
 function getKpiSatelliteLaunchTicket(){return kpiMainTicket_();}
-function verifyKpiSatelliteMainBridge(){requirePrecheckAdmin_('verifyKpiSatelliteMainBridge');var props=PropertiesService.getScriptProperties(),url=String(props.getProperty(KPI_MAIN_BRIDGE.PROP_URL)||''),secret=String(props.getProperty(KPI_MAIN_BRIDGE.PROP_SECRET)||'');return{ok:/^https:\/\/script\.google\.com\//i.test(url)&&url.indexOf('/exec')>=0&&secret.length>=32,urlConfigured:!!url,secretConfigured:secret.length>=32};}
+function verifyKpiSatelliteMainBridge(){
+  requirePrecheckAdmin_('verifyKpiSatelliteMainBridge');
+  var checkedAt=new Date().toISOString();
+  console.log('[KPI MAIN BRIDGE] START version=1.1.3 checkedAt='+checkedAt);
+  try{
+    var props=PropertiesService.getScriptProperties();
+    var url=String(props.getProperty(KPI_MAIN_BRIDGE.PROP_URL)||'').trim();
+    var secret=String(props.getProperty(KPI_MAIN_BRIDGE.PROP_SECRET)||'');
+    var urlConfigured=!!url;
+    var urlValid=/^https:\/\/script\.google\.com\//i.test(url)&&/\/exec(?:[?#]|$)/i.test(url);
+    var secretConfigured=secret.length>=32;
+    var ticketOk=false,ticketExpiresAt='';
+    var ticketError='';
+
+    if(urlConfigured&&urlValid&&secretConfigured){
+      try{
+        var t=kpiMainTicket_();
+        ticketOk=!!(t&&t.ticket&&t.url&&t.expiresAt&&String(t.ticket).indexOf('.')>0);
+        ticketExpiresAt=t&&t.expiresAt?String(t.expiresAt):'';
+      }catch(ticketEx){
+        ticketError=(ticketEx&&ticketEx.message)?ticketEx.message:String(ticketEx);
+      }
+    }
+
+    console.log('[KPI MAIN BRIDGE] '+(urlConfigured?'PASS':'FAIL')+' satellite-url-configured — '+JSON.stringify({configured:urlConfigured}));
+    console.log('[KPI MAIN BRIDGE] '+(urlValid?'PASS':'FAIL')+' satellite-url-format — '+JSON.stringify({valid:urlValid,host:urlValid?'script.google.com':'',execPath:urlValid}));
+    console.log('[KPI MAIN BRIDGE] '+(secretConfigured?'PASS':'FAIL')+' handoff-secret — '+JSON.stringify({configured:secretConfigured,length:secret.length}));
+    if(urlConfigured&&urlValid&&secretConfigured){
+      console.log('[KPI MAIN BRIDGE] '+(ticketOk?'PASS':'FAIL')+' ticket-generation — '+JSON.stringify({ok:ticketOk,expiresAt:ticketExpiresAt,error:ticketError}));
+    }else{
+      console.warn('[KPI MAIN BRIDGE] SKIP ticket-generation — prerequisite configuration failed');
+    }
+
+    var failed=[];
+    if(!urlConfigured)failed.push('satellite-url-configured');
+    if(!urlValid)failed.push('satellite-url-format');
+    if(!secretConfigured)failed.push('handoff-secret');
+    if(urlConfigured&&urlValid&&secretConfigured&&!ticketOk)failed.push('ticket-generation');
+    var result={
+      ok:failed.length===0,
+      checkedAt:checkedAt,
+      version:'1.1.3',
+      urlConfigured:urlConfigured,
+      urlValid:urlValid,
+      secretConfigured:secretConfigured,
+      ticketGenerationOk:ticketOk,
+      ticketExpiresAt:ticketExpiresAt,
+      failedChecks:failed
+    };
+    console.log('[KPI MAIN BRIDGE] COMPLETE ok='+result.ok+' failed='+failed.length+(failed.length?' failedChecks='+failed.join(','):''));
+    return result;
+  }catch(e){
+    var msg=(e&&e.message)?e.message:String(e);
+    console.error('[KPI MAIN BRIDGE] FATAL — '+msg);
+    throw e;
+  }
+}
