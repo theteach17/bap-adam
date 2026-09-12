@@ -18,7 +18,7 @@ function getKpiSatelliteLaunchTicket(){return kpiMainTicket_();}
 function verifyKpiSatelliteMainBridge(){
   requirePrecheckAdmin_('verifyKpiSatelliteMainBridge');
   var checkedAt=new Date().toISOString();
-  console.log('[KPI MAIN BRIDGE] START version=1.1.3 checkedAt='+checkedAt);
+  console.log('[KPI MAIN BRIDGE] START version=1.2.0 checkedAt='+checkedAt);
   try{
     var props=PropertiesService.getScriptProperties();
     var url=String(props.getProperty(KPI_MAIN_BRIDGE.PROP_URL)||'').trim();
@@ -56,13 +56,14 @@ function verifyKpiSatelliteMainBridge(){
     var result={
       ok:failed.length===0,
       checkedAt:checkedAt,
-      version:'1.1.3',
+      version:'1.2.0',
       urlConfigured:urlConfigured,
       urlValid:urlValid,
       secretConfigured:secretConfigured,
       ticketGenerationOk:ticketOk,
       ticketExpiresAt:ticketExpiresAt,
-      failedChecks:failed
+      failedChecks:failed,
+      expectedSatelliteTransportAccess:'ANYONE_ANONYMOUS'
     };
     console.log('[KPI MAIN BRIDGE] COMPLETE ok='+result.ok+' failed='+failed.length+(failed.length?' failedChecks='+failed.join(','):''));
     return result;
