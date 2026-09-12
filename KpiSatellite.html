@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="th"><head><base target="_self"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script>
+if(!window.Swal){window.Swal={showLoading:function(){},fire:function(opts){opts=opts||{};var msg=[opts.title||'',opts.text||''].filter(Boolean).join('\n');if(opts.showCancelButton){return Promise.resolve({isConfirmed:window.confirm(msg||'ยืนยันการดำเนินการ?')});}if(msg)window.alert(msg);return Promise.resolve({isConfirmed:true});}};}
+</script>
+<style>html,body{margin:0;min-height:100%;background:#f3f6fb;font-family:'Chakra Petch',sans-serif}.sat-boot{position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;background:#f3f6fb}.sat-card{width:min(560px,92vw);background:#fff;border:1px solid #e4eaf2;border-radius:18px;padding:24px;box-shadow:0 16px 50px rgba(24,55,88,.14)}.sat-title{font-size:1.25rem;font-weight:700;color:#173b66}.sat-sub{color:#6b7785;margin-top:6px}.sat-stage{margin-top:18px;background:#f7f9fc;border-radius:12px;padding:14px}.sat-dot{display:inline-block;width:10px;height:10px;border-radius:50%;background:#2b6cb0;margin-right:8px;animation:pulse 1s infinite}.sat-error{color:#842029;background:#f8d7da}.sat-retry{margin-top:12px;border:0;border-radius:10px;background:#245da8;color:#fff;padding:9px 14px;font-family:inherit}@keyframes pulse{50%{opacity:.3}}</style></head>
+<body>
+<div class="sat-boot" id="satBoot"><div class="sat-card"><div class="sat-title"><i class="fa-solid fa-chart-line"></i> Project Adam KPI Satellite</div><div class="sat-sub">โมดูลวิเคราะห์ทำงานภายใต้ budgetservice และจะแสดงสถานะทุกขั้นตอน</div><div class="sat-stage" id="satStage"><span class="sat-dot"></span><span id="satStageText">กำลังเริ่มต้นโมดูล...</span></div><button class="sat-retry" id="satRetry" style="display:none" onclick="satReady_()">ลองเชื่อมต่อใหม่</button></div></div>
+<?!= includeKpi_('KpiAdminWidget'); ?>
+<script>
+(function(){
+  const p=new URLSearchParams(location.hash.replace(/^#/,'')); window.KPI_CHANNEL=p.get('channel')||''; window.KPI_SESSION_TOKEN='';
+  function post(type,data){try{window.parent.postMessage(Object.assign({source:'PROJECT_ADAM_KPI_SATELLITE',type:type,channel:window.KPI_CHANNEL},data||{}),'*');}catch(e){}}
+  window.satSetStage_=function(text,code,isError){let b=document.getElementById('satStage'),t=document.getElementById('satStageText');t.textContent=text;b.className='sat-stage'+(isError?' sat-error':'');document.getElementById('satRetry').style.display=isError?'inline-block':'none';post('STAGE',{stage:code||'',message:text,error:!!isError});};
+  window.satReady_=function(){satSetStage_('กำลังรอการยืนยันจาก Project Adam...','WAIT_HANDOFF',false);post('READY',{moduleVersion:'1.1.0'});};
+  window.addEventListener('message',function(ev){let d=ev.data||{};if(ev.source!==window.parent||d.source!=='PROJECT_ADAM_MAIN'||d.type!=='HANDOFF'||d.channel!==window.KPI_CHANNEL)return;satSetStage_('ได้รับสิทธิ์จาก Project Adam กำลังตรวจสอบลายเซ็น...','VERIFY_HANDOFF',false);google.script.run.withSuccessHandler(function(r){window.KPI_SESSION_TOKEN=r.sessionToken;satSetStage_('ยืนยัน PRECHECK_ADMIN แล้ว กำลังโหลด Dashboard...','AUTH_OK',false);post('AUTH_OK',{principal:r.principal,expiresAt:r.expiresAt});document.getElementById('satBoot').style.display='none';openKpiDashboard();}).withFailureHandler(function(e){satSetStage_((e&&e.message)||String(e),'AUTH_ERROR',true);post('ERROR',{message:(e&&e.message)||String(e)});}).bootstrapKpiSession(d.ticket);});
+  window.addEventListener('load',function(){setTimeout(satReady_,80);});
+})();
+</script></body></html>
