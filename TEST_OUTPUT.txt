@@ -1,0 +1,30 @@
+PASS static integration checks: 64
+PASS transport hardening checks: 15
+{"ok":true,"tests":8,"session":{"sessions":2,"activeMinutes":11}}
+{"ok":true,"tests":13,"overview":{"completedReviews":2,"uniqueSubmissions":2,"medianResponseMinutes":30,"p90ResponseMinutes":30,"medianResponseElapsedMinutes":30,"medianTurnaroundMinutes":105,"p90TurnaroundMinutes":150,"medianTurnaroundElapsedMinutes":105,"responseSlaRate":100,"turnaroundSlaRate":50,"checklistCompletionRate":95,"activeOfficerCount":2,"baselineMode":true,"scoreEnabled":false},"queue":{"waitingCount":1,"inReviewCount":1},"table":[{"officerEmail":"o1@test","officerName":"O1","role":"PRECHECK_OFFICER","completedReviews":1,"uniqueSubmissions":1,"firstReviews":1,"revisionReviews":0,"approvedReviews":1,"revisionRequiredReviews":0,"medianResponseMinutes":30,"p90ResponseMinutes":30,"medianResponseElapsedMinutes":30,"medianTurnaroundMinutes":60,"p90TurnaroundMinutes":60,"medianTurnaroundElapsedMinutes":60,"medianReviewElapsedMinutes":30,"observedActiveMinutes":11,"activeDays":1,"productiveSessions":1,"queueChecks":1,"responseSlaRate":100,"turnaroundSlaRate":100,"checklistCompletionRate":100,"workloadShare":50,"sampleSufficient":true,"score":null},{"officerEmail":"o2@test","officerName":"O2","role":"PRECHECK_OFFICER","completedReviews":1,"uniqueSubmissions":1,"firstReviews":0,"revisionReviews":1,"approvedReviews":0,"revisionRequiredReviews":1,"medianResponseMinutes":30,"p90ResponseMinutes":30,"medianResponseElapsedMinutes":30,"medianTurnaroundMinutes":150,"p90TurnaroundMinutes":150,"medianTurnaroundElapsedMinutes":150,"medianReviewElapsedMinutes":120,"observedActiveMinutes":1,"activeDays":1,"productiveSessions":1,"queueChecks":1,"responseSlaRate":100,"turnaroundSlaRate":0,"checklistCompletionRate":90,"workloadShare":50,"sampleSufficient":true,"score":null}]}
+{"ok":true,"tests":7}
+{"ok":true,"tests":7}
+PASS HTML JavaScript syntax
+PASS all local checks
+PASS channel_query_not_hash
+PASS main_accepts_nested_peer
+PASS main_origin_guard
+PASS sat_server_channel
+PASS sat_embed_server_flag
+PASS sat_ancestor_relay
+PASS sat_accepts_ancestor_handoff
+PASS sat_direct_uses_embed_flag
+PASS strict_exec_url
+PASS version_121_main
+PASS version_122_sat
+TOTAL 11 PASS
+PASS sat_exposes_shared_relay
+PASS widget_uses_shared_relay
+PASS dashboard_ready_uses_relay
+PASS stage_uses_relay
+PASS close_uses_relay
+PASS no_dashboard_parent_only
+PASS render_error_observable
+PASS data_error_observable
+PASS relay_is_bounded
+TOTAL 9 PASS

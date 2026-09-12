@@ -102,9 +102,27 @@
   const mins = v => {let m=Math.max(0,Math.round(Number(v)||0));return m<60?m+' นาที':Math.floor(m/60)+' ชม.'+(m%60?' '+m%60+' นาที':'');};
   const dateText = v => {if(!v)return '-';let d=new Date(v);return isNaN(d)?esc(v):d.toLocaleString('th-TH',{dateStyle:'short',timeStyle:'short'});};
 
-  window.openKpiDashboard = function(){ const el=document.getElementById('kpiOverlay');el.classList.add('kpi-open');el.setAttribute('aria-hidden','false');document.body.style.overflow='hidden';if(!document.getElementById('kpiStartDate').value){let end=new Date(),start=new Date();start.setDate(end.getDate()-29);document.getElementById('kpiStartDate').value=localYmd(start);document.getElementById('kpiEndDate').value=localYmd(end);} loadKpiDashboard(false); };
-  window.closeKpiDashboard = function(){ try{window.parent.postMessage({source:'PROJECT_ADAM_KPI_SATELLITE',type:'REQUEST_CLOSE',channel:window.KPI_CHANNEL||''},'*');}catch(e){} };
-  function kpiStage(text,code){let el=document.getElementById('kpiLoadingText');if(el)el.textContent=text||'';try{window.parent.postMessage({source:'PROJECT_ADAM_KPI_SATELLITE',type:'STAGE',channel:window.KPI_CHANNEL||'',stage:code||'',message:text||''},'*');}catch(e){}}
+  function kpiRelay(type,data){
+    data=data||{};
+    if(typeof window.kpiSatelliteRelay_==='function'){
+      try{return window.kpiSatelliteRelay_(type,data);}catch(e){}
+    }
+    // Defensive fallback for mixed deployments: relay to bounded ancestors from this inner HTMLService frame.
+    let msg=Object.assign({source:'PROJECT_ADAM_KPI_SATELLITE',type:type,channel:window.KPI_CHANNEL||''},data),w=window,sent=0;
+    for(let i=0;i<8;i++){let p;try{p=w.parent;}catch(e){break;}if(!p||p===w)break;try{p.postMessage(msg,'*');sent++;}catch(e){}w=p;}
+    return sent;
+  }
+  function kpiErrorMessage(e){return (e&&e.message)?String(e.message):String(e||'Unknown error');}
+  window.openKpiDashboard = function(){
+    const el=document.getElementById('kpiOverlay');el.classList.add('kpi-open');el.setAttribute('aria-hidden','false');document.body.style.overflow='hidden';
+    if(!document.getElementById('kpiStartDate').value){let end=new Date(),start=new Date();start.setDate(end.getDate()-29);document.getElementById('kpiStartDate').value=localYmd(start);document.getElementById('kpiEndDate').value=localYmd(end);}
+    loadKpiDashboard(false);
+  };
+  window.closeKpiDashboard = function(){ kpiRelay('REQUEST_CLOSE',{}); };
+  function kpiStage(text,code,isError,detail){
+    let el=document.getElementById('kpiLoadingText');if(el)el.textContent=text||'';
+    kpiRelay('STAGE',{stage:code||'',message:text||'',error:!!isError,detail:detail||null});
+  }
   function rpc(method,args,onSuccess,onFailure){if(!window.KPI_SESSION_TOKEN){(onFailure||function(){})(new Error('KPI session ยังไม่พร้อม'));return;}google.script.run.withSuccessHandler(onSuccess||function(){}).withFailureHandler(onFailure||function(e){}).kpiRpc(window.KPI_SESSION_TOKEN,method,args||[]);}
   window.showKpiTab = function(name,btn){document.querySelectorAll('.kpi-panel').forEach(x=>x.classList.remove('active'));document.querySelectorAll('.kpi-tab').forEach(x=>x.classList.remove('active'));document.getElementById('kpiPanel-'+name).classList.add('active');if(btn)btn.classList.add('active');};
   const localYmd=d=>{let y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,'0'),day=String(d.getDate()).padStart(2,'0');return `${y}-${m}-${day}`;};
@@ -112,7 +130,23 @@
   function filter(){return{startDate:document.getElementById('kpiStartDate').value,endDate:document.getElementById('kpiEndDate').value,adminGroup:document.getElementById('kpiAdminGroup').value,workGroup:document.getElementById('kpiWorkGroup').value,officerEmail:document.getElementById('kpiOfficerFilter').value};}
   window.loadKpiDashboard = function(){
     document.getElementById('kpiLoading').style.display='block';document.getElementById('kpiError').style.display='none';
-    kpiStage('กำลังอ่านข้อมูลและคำนวณ KPI...','LOADING_DATA'); rpc('dashboard',[filter()],function(data){window.kpiDashboardData=data;document.getElementById('kpiLoading').style.display='none';renderAll(data);kpiStage('Dashboard พร้อมใช้งาน','READY');try{window.parent.postMessage({source:'PROJECT_ADAM_KPI_SATELLITE',type:'DASHBOARD_READY',channel:window.KPI_CHANNEL||''},'*');}catch(e){}},function(e){document.getElementById('kpiLoading').style.display='none';let box=document.getElementById('kpiError');box.style.display='block';box.textContent=(e&&e.message)||String(e);kpiStage('โหลด KPI ไม่สำเร็จ','ERROR');});
+    kpiStage('กำลังอ่านข้อมูลและคำนวณ KPI...','LOADING_DATA',false);
+    rpc('dashboard',[filter()],function(data){
+      window.kpiDashboardData=data;document.getElementById('kpiLoading').style.display='none';
+      try{
+        renderAll(data);
+        kpiStage('Dashboard พร้อมใช้งาน','READY',false);
+        kpiRelay('DASHBOARD_READY',{moduleVersion:(data&&data.moduleVersion)||'1.2.2',generatedAt:(data&&data.generatedAt)||''});
+      }catch(ex){
+        let msg=kpiErrorMessage(ex),box=document.getElementById('kpiError');box.style.display='block';box.textContent='Dashboard render error: '+msg;
+        kpiStage('แสดงผล Dashboard ไม่สำเร็จ: '+msg,'DASHBOARD_RENDER_ERROR',true,{message:msg});
+        kpiRelay('ERROR',{code:'DASHBOARD_RENDER_ERROR',message:msg});
+      }
+    },function(e){
+      document.getElementById('kpiLoading').style.display='none';let msg=kpiErrorMessage(e),box=document.getElementById('kpiError');box.style.display='block';box.textContent=msg;
+      kpiStage('โหลดข้อมูล KPI ไม่สำเร็จ: '+msg,'DASHBOARD_DATA_ERROR',true,{message:msg});
+      kpiRelay('ERROR',{code:'DASHBOARD_DATA_ERROR',message:msg});
+    });
   };
   function card(label,value,sub){return `<div class="kpi-card"><div class="label">${esc(label)}</div><div class="value">${esc(value)}</div><div class="sub">${esc(sub||'')}</div></div>`;}
   function renderAll(d){

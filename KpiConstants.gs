@@ -1,6 +1,6 @@
 /** Constants for Project Adam Pre-check Performance & KPI Module. */
 var KPI_CONST = Object.freeze({
-  VERSION: '1.2.1',
+  VERSION: '1.2.2',
   SHEETS: Object.freeze({
     EVENTS: 'PC_KPIEvents',
     ASSIGNMENTS: 'PC_KPIAssignments',

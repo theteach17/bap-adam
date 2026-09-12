@@ -31,6 +31,9 @@ if(!window.Swal){window.Swal={showLoading:function(){},fire:function(opts){opts=
     for(let i=0;i<a.length;i++){try{a[i].postMessage(msg,'*');sent++;}catch(e){}}
     return sent;
   }
+  // Shared relay for KpiAdminWidget. All browser events must leave the inner HTMLService frame
+  // through this bounded ancestor relay; window.parent alone only reaches Google's wrapper frame.
+  window.kpiSatelliteRelay_=function(type,data){ return post(type,data); };
   window.satSetStage_=function(text,code,isError){let b=document.getElementById('satStage'),t=document.getElementById('satStageText');t.textContent=text;b.className='sat-stage'+(isError?' sat-error':'');document.getElementById('satRetry').style.display=isError?'inline-block':'none';post('STAGE',{stage:code||'',message:text,error:!!isError});};
   window.satReady_=function(){
     if(!EMBED){
@@ -39,7 +42,7 @@ if(!window.Swal){window.Swal={showLoading:function(){},fire:function(opts){opts=
     }
     if(!CHANNEL){satSetStage_('ไม่พบ transport channel กรุณาปิดแล้วเปิด Dashboard ใหม่','EMBED_CHANNEL_MISSING',true);return;}
     satSetStage_('เชื่อมต่อ Satellite แล้ว กำลังส่ง READY ผ่าน Apps Script nested-frame relay...','WAIT_HANDOFF',false);
-    post('READY',{moduleVersion:'1.2.1',transportMode:'PUBLIC_SIGNED_HANDOFF',relayDepth:ancestors_().length});
+    post('READY',{moduleVersion:'1.2.2',transportMode:'PUBLIC_SIGNED_HANDOFF',relayDepth:ancestors_().length});
     if(handoffTimer)clearTimeout(handoffTimer);
     handoffTimer=setTimeout(function(){if(!authenticated)satSetStage_('ไม่ได้รับ Secure Handoff ภายในเวลาที่กำหนด กรุณาปิดแล้วเปิด Dashboard ใหม่','HANDOFF_TIMEOUT',true);},15000);
   };

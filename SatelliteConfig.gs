@@ -1,6 +1,6 @@
 /** Standalone runtime configuration for Project Adam KPI Satellite. */
 var KPI_SATELLITE = Object.freeze({
-  VERSION: '1.2.1',
+  VERSION: '1.2.2',
   REQUIRED_RUNNER_EMAIL: 'budgetservice@g.klaeng.ac.th',
   DEFAULT_DB_ID: '16FtFuJUVhdLj8eidgVtjsKThNrlS5ge5NznSU6EVMn0',
   PROP_DB_ID: 'KPI_PRECHECK_DB_ID',
