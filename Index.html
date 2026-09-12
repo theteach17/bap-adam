@@ -563,6 +563,7 @@
         <div class="menu-label mt-4">งานตรวจเอกสาร</div>
         <button class="nav-btn" onclick="goPage('PrecheckOfficer')"><i class="fas fa-clipboard-check text-warning"></i> ตรวจรายงาน Pre-check</button>
         <button class="nav-btn" id="adminTemplateMenu" style="display:none" onclick="goPage('PrecheckAdmin')"><i class="fas fa-list-check text-secondary"></i> จัดการแบบตรวจ</button>
+        <button class="nav-btn" id="adminKpiSatelliteMenu" style="display:none" onclick="openKpiSatelliteDashboard()"><i class="fas fa-chart-line text-info"></i> ประสิทธิภาพการตรวจรายงาน</button>
       </div>
 
       <button class="nav-btn legacy-report-flow-btn" id="adminLegacyReportMenu" style="display:none" onclick="showReportForm()">
@@ -664,7 +665,7 @@
         <div class="modal-body p-4">
           <form id="dataForm">
              <div class="alert alert-warning border-0 shadow-sm mb-3">
-               <small><i class="fas fa-info-circle me-1"></i> กรุณากรอกรหัสกิจกรรมเพื่อดึงและเชื่อมโยงข้อมูลอัตโนมัติ</small>
+               <small><i class="fas fa-info-circle me-1"></i> กรอกรหัสกิจกรรมเพื่อดึงข้อมูลอัตโนมัติ (ถ้ามี)</small>
             </div>
             
             <div class="mb-3">
@@ -681,7 +682,7 @@
 
             <div class="mb-3">
               <label for="activityName" class="form-label">ชื่อกิจกรรม <span class="text-danger">*</span></label>
-              <input type="text" class="form-control" id="activityName" required placeholder="ระบุชื่อกิจกรรมโดยขึ้นต้นด้วยคำว่า กิจกรรม">
+              <input type="text" class="form-control" id="activityName" required placeholder="หากไม่มีรหัสกิจกรรม ต้องพิมพ์ชื่อกิจกรรมโดยขึ้นต้นด้วยคำว่า กิจกรรม">
               <div class="form-text">ระบบจะเติมชื่อกิจกรรมให้อัตโนมัติเมื่อพบรหัสกิจกรรมในฐานข้อมูลกิจกรรม</div>
             </div>
 
@@ -1071,6 +1072,8 @@
         if (isPrecheckAdmin) {
           document.getElementById('adminTemplateMenu').style.display = 'flex';
         }
+        const adminKpiSatelliteMenu = document.getElementById('adminKpiSatelliteMenu');
+        if (adminKpiSatelliteMenu) adminKpiSatelliteMenu.style.display = isPrecheckAdmin ? 'flex' : 'none';
 
         const adminLegacyReportMenu = document.getElementById('adminLegacyReportMenu');
         const adminLegacyNonCompletedMenu = document.getElementById('adminLegacyNonCompletedMenu');
@@ -1413,7 +1416,7 @@
         if (!el) return;
         el.readOnly = false;
         el.classList.remove('bg-light');
-        el.placeholder = 'ระบุชื่อกิจกรรมโดยขึ้นต้นด้วยคำว่า กิจกรรม';
+        el.placeholder = 'หากไม่มีรหัสกิจกรรม ต้องพิมพ์ชื่อกิจกรรมโดยขึ้นต้นด้วยคำว่า กิจกรรม';
     }
 
     function setActivityNameAutoMode(value) {
@@ -1519,7 +1522,7 @@
               Swal.fire({
                 icon: 'warning',
                 title: 'ไม่พบรหัสกิจกรรม',
-                text: 'กรุณาตรวจสอบรหัสกิจกรรมให้ถูกต้อง',
+                text: 'กรุณาตรวจสอบรหัสกิจกรรมให้ถูกต้อง หรือเว้นว่างไว้หากต้องการกรอกข้อมูลเอง',
                 confirmButtonColor: '#d63031'
               });
             }
@@ -1986,7 +1989,7 @@
         Swal.fire({
           icon: 'warning',
           title: 'ไม่สามารถบันทึกข้อมูลได้',
-          text: 'กรุณาตรวจสอบรหัสกิจกรรมให้ถูกต้อง',
+          text: 'กรุณาตรวจสอบรหัสกิจกรรมให้ถูกต้อง หรือเว้นว่างไว้หากต้องการกรอกข้อมูลเอง',
           confirmButtonColor: '#d63031'
         });
         return;
@@ -2003,22 +2006,11 @@
         return;
       }
 
-      // [PATCH] เอกสารในโครงการตามแผนปฏิบัติการต้องมีรหัสกิจกรรมก่อนบันทึก
-      if (!activityCode && (actionPlanProject || '').trim() !== 'เอกสารที่ไม่อยู่ในโครงการใด') {
-        Swal.fire({
-          icon: 'warning',
-          title: 'กรุณาระบุรหัสกิจกรรม',
-          text: 'ต้องระบุรหัสกิจกรรมให้ถูกต้องก่อนจึงจะดำเนินการบันทึกข้อมูลต่อได้',
-          confirmButtonColor: '#d63031'
-        });
-        return;
-      }
-
       if (!activityCode && !activityName.startsWith('กิจกรรม')) {
         Swal.fire({
           icon: 'warning',
           title: 'ชื่อกิจกรรมไม่ถูกต้อง',
-          text: 'ชื่อกิจกรรมต้องขึ้นต้นด้วยคำว่า "กิจกรรม"',
+          text: 'กรณีไม่กรอกรหัสกิจกรรม ต้องพิมพ์ชื่อกิจกรรมโดยขึ้นต้นด้วยคำว่า "กิจกรรม"',
           confirmButtonColor: '#d63031'
         });
         return;
@@ -2410,6 +2402,7 @@ function validateAndSaveReport() {
       console.error(error); 
     }
   </script>
+  <?!= include_('KpiSatelliteLauncherWidget'); ?>
   <?!= include_('AssistantWidget'); ?>
 </body>
 </html>
