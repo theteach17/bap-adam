@@ -12,24 +12,43 @@ if(!window.Swal){window.Swal={showLoading:function(){},fire:function(opts){opts=
 <?!= includeKpi_('KpiAdminWidget'); ?>
 <script>
 (function(){
-  const p=new URLSearchParams(location.hash.replace(/^#/,'')); window.KPI_CHANNEL=p.get('channel')||''; window.KPI_SESSION_TOKEN='';
-  let handoffTimer=null,authenticated=false;
-  function post(type,data){try{window.parent.postMessage(Object.assign({source:'PROJECT_ADAM_KPI_SATELLITE',type:type,channel:window.KPI_CHANNEL},data||{}),'*');}catch(e){}}
+  const EMBED=<?!= embed ? 'true' : 'false' ?>;
+  const CHANNEL=<?!= JSON.stringify(channel || '') ?>;
+  window.KPI_CHANNEL=CHANNEL;window.KPI_SESSION_TOKEN='';
+  let handoffTimer=null,authenticated=false,handoffPeer=null,handoffOrigin='*';
+  function ancestors_(){
+    let out=[],w=window;
+    for(let i=0;i<8;i++){
+      let p;try{p=w.parent;}catch(e){break;}
+      if(!p||p===w)break;out.push(p);w=p;
+    }
+    return out;
+  }
+  function isAncestor_(candidate){if(!candidate)return false;let a=ancestors_();for(let i=0;i<a.length;i++)if(a[i]===candidate)return true;return false;}
+  function post(type,data){
+    if(!EMBED)return 0;
+    let msg=Object.assign({source:'PROJECT_ADAM_KPI_SATELLITE',type:type,channel:CHANNEL},data||{}),a=ancestors_(),sent=0;
+    for(let i=0;i<a.length;i++){try{a[i].postMessage(msg,'*');sent++;}catch(e){}}
+    return sent;
+  }
   window.satSetStage_=function(text,code,isError){let b=document.getElementById('satStage'),t=document.getElementById('satStageText');t.textContent=text;b.className='sat-stage'+(isError?' sat-error':'');document.getElementById('satRetry').style.display=isError?'inline-block':'none';post('STAGE',{stage:code||'',message:text,error:!!isError});};
   window.satReady_=function(){
-    if(window.parent===window){
+    if(!EMBED){
       satSetStage_('Transport พร้อมใช้งาน — กรุณาเปิด Dashboard จากเมนู Project Adam','DIRECT_ACCESS',false);
-      document.getElementById('satRetry').style.display='none';
-      return;
+      document.getElementById('satRetry').style.display='none';return;
     }
-    satSetStage_('เชื่อมต่อ Satellite แล้ว กำลังรอ Secure Handoff จาก Project Adam...','WAIT_HANDOFF',false);
-    post('READY',{moduleVersion:'1.2.0',transportMode:'PUBLIC_SIGNED_HANDOFF'});
+    if(!CHANNEL){satSetStage_('ไม่พบ transport channel กรุณาปิดแล้วเปิด Dashboard ใหม่','EMBED_CHANNEL_MISSING',true);return;}
+    satSetStage_('เชื่อมต่อ Satellite แล้ว กำลังส่ง READY ผ่าน Apps Script nested-frame relay...','WAIT_HANDOFF',false);
+    post('READY',{moduleVersion:'1.2.1',transportMode:'PUBLIC_SIGNED_HANDOFF',relayDepth:ancestors_().length});
     if(handoffTimer)clearTimeout(handoffTimer);
     handoffTimer=setTimeout(function(){if(!authenticated)satSetStage_('ไม่ได้รับ Secure Handoff ภายในเวลาที่กำหนด กรุณาปิดแล้วเปิด Dashboard ใหม่','HANDOFF_TIMEOUT',true);},15000);
   };
   window.addEventListener('message',function(ev){
     let d=ev.data||{};
-    if(ev.source!==window.parent||d.source!=='PROJECT_ADAM_MAIN'||d.type!=='HANDOFF'||d.channel!==window.KPI_CHANNEL)return;
+    if(d.source!=='PROJECT_ADAM_MAIN'||d.type!=='HANDOFF'||d.channel!==CHANNEL)return;
+    if(!isAncestor_(ev.source))return;
+    if(handoffPeer&&ev.source!==handoffPeer)return;
+    handoffPeer=ev.source;handoffOrigin=ev.origin||'*';
     if(handoffTimer)clearTimeout(handoffTimer);
     satSetStage_('ได้รับ Secure Handoff แล้ว กำลังตรวจลายเซ็นและสิทธิ์ PRECHECK_ADMIN...','VERIFY_HANDOFF',false);
     google.script.run.withSuccessHandler(function(r){

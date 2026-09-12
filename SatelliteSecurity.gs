@@ -9,7 +9,7 @@ function kpiNewSecret_(){ var seed=[Utilities.getUuid(),Utilities.getUuid(),Util
 
 /** Manual runner-only secret rotation. Update the matching Script Property in Project Adam immediately afterwards. */
 function rotateKpiHandoffSecret(){ kpiRequireAdminEditor_(); var secret=kpiNewSecret_(); PropertiesService.getScriptProperties().setProperty(KPI_SATELLITE.PROP_HANDOFF_SECRET,secret); return {ok:true,secret:secret,warning:'Copy this value to Project Adam Script Property PROJECT_ADAM_KPI_HANDOFF_SECRET before opening the dashboard.'}; }
-function getKpiSatelliteIntegrationInfo(){ kpiRequireAdminEditor_(); return {ok:true,moduleVersion:KPI_CONST.VERSION,runner:KPI_SATELLITE.REQUIRED_RUNNER_EMAIL,dbId:kpiSatelliteDbId_(),handoffSecret:kpiHandoffSecret_(),transportMode:KPI_SATELLITE.TRANSPORT_MODE,deploymentInstruction:'Deploy as Web app: Execute as Me (budgetservice) and choose the access option that does not require Google sign-in (ANYONE_ANONYMOUS). Data access remains protected by signed handoff + PC_Access.'}; }
+function getKpiSatelliteIntegrationInfo(){ kpiRequireAdminEditor_(); return {ok:true,moduleVersion:KPI_CONST.VERSION,runner:KPI_SATELLITE.REQUIRED_RUNNER_EMAIL,dbId:kpiSatelliteDbId_(),handoffSecret:kpiHandoffSecret_(),transportMode:KPI_SATELLITE.TRANSPORT_MODE,deploymentInstruction:'Deploy as Web app: Execute as Me (budgetservice) and choose the access option that does not require Google sign-in (ANYONE_ANONYMOUS). HTMLService nested-frame relay v1.2.1 carries only the signed handoff; data access remains protected by signed handoff + PC_Access.'}; }
 
 
 
