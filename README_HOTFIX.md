@@ -1,15 +1,37 @@
-# Project Adam KPI Satellite v1.1.2 — Clock Storage Hotfix
+# Project Adam KPI Satellite v1.2.0 — Transport Security Hotfix
 
-สาเหตุ: Google Sheets สามารถ auto-convert `08:00` / `16:30` ใน `PC_KPIConfig.Value` เป็น native TIME ทำให้ v1.1.1 Health Check อ่านชนิดข้อมูลไม่ตรงและรายงาน `invalid working hours` ทั้งที่ค่าที่แสดงถูกต้อง
+## ปัญหาที่แก้
+v1.1.2 ใช้ Satellite Web App แบบต้องผ่าน Google sign-in/Domain access แล้วนำ URL ไปฝังใน iframe ของ Project Adam Main. ในบาง browser/session ชั้น authentication ของ Google ถูก redirect ภายใน iframe และไม่ส่ง `READY` กลับ Main จึงค้างที่ขั้น 3 แม้ Main bridge และ Satellite backend จะปกติ.
 
-## ติดตั้งจาก v1.1.1
-1. Replace 7 files ใน KPI Satellite ด้วยไฟล์ใน ZIP นี้
-2. Save
-3. Run `repairKpiClockStorage()` หนึ่งครั้ง
-4. Run `runKpiHealthCheck()` — ต้องได้ `ok=true failed=0`
-5. Run `runKpiProductionSmokeTest()` — ต้องได้ `ok=true` และ `businessTimeSelfTest=90`
-6. หากยังไม่ได้ Deploy Web App ก่อนหน้า ให้ Deploy หลังผ่านทั้งสองการตรวจ
+## แนวทาง v1.2.0
+Satellite เปลี่ยนเป็น **public transport / private data**:
+- Web App transport ต้องเลือก access แบบไม่ต้อง Google sign-in (`ANYONE_ANONYMOUS` / UI ที่ระบุว่า Anyone โดยไม่ต้องลงชื่อเข้าใช้)
+- Execute as: Me (`budgetservice@g.klaeng.ac.th`)
+- หน้า doGet ไม่มีข้อมูล KPI จนกว่า Signed Handoff จะผ่าน
+- Handoff ใช้ HMAC, short-lived ticket, one-time nonce, PC_Access PRECHECK_ADMIN, short-lived session
+- Direct legacy API ยังคง fail-closed เพราะไม่มี KPI request context
+- Maintenance functions ตรวจ Active User ต้องเป็น budgetservice
+- Time triggers ตรวจ `triggerUid` กับ trigger จริงก่อนประมวลผล
+- Bootstrap มี rate limit เพื่อลด abuse
 
-ไม่ต้องแก้ Project Adam Main Patch และไม่ต้องรัน `setupKpiSatellite()` ซ้ำเพื่อ hotfix นี้
+## ไฟล์ที่ต้อง Replace ใน Satellite
+- SatelliteConfig.gs
+- KpiConstants.gs
+- SatelliteSecurity.gs
+- KpiSetup.gs
+- KpiJobService.gs
+- KpiDiagnostics.gs
+- KpiSatellite.html
+- KpiWeb.gs
 
-Hotfix นี้ไม่เขียน `PC_Submissions`, `PC_Versions`, `PC_Reviews`, `PC_Audit` หรือ workflow หลัก
+## ขั้นตอน
+1. Replace 8 files ข้างต้น แล้ว Save.
+2. Run `runKpiHealthCheck()` ต้อง `ok=true failed=0` และมี `PASS transport-security`.
+3. ไม่ต้อง Run setup ซ้ำ.
+4. Deploy > Manage deployments > Satellite deployment เดิม > Edit > New version.
+5. Execute as: **Me (budgetservice)**.
+6. Who has access: เลือกตัวเลือกที่ **ไม่ต้อง Google sign-in** (`ANYONE_ANONYMOUS`).
+7. Deploy โดยใช้ deployment เดิมเพื่อให้ `/exec` URL เดิมไม่เปลี่ยน.
+8. เปิด `/exec` โดยตรง: ต้องเห็นข้อความว่า Transport พร้อมใช้งานและให้เปิดผ่าน Project Adam; ต้องไม่เห็นข้อมูล KPI.
+
+หาก Workspace policy ไม่มีตัวเลือก access แบบไม่ต้อง sign-in ให้หยุดก่อน ไม่ควรลด security อื่นหรือเปลี่ยน Execute as. ต้องใช้ fallback transport architecture แทน.

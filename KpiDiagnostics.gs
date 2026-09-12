@@ -21,6 +21,14 @@ function runKpiHealthCheckCore_(){
   check('source:PC_Access',function(){var model=kpiLoadModel_({includeAudit:false}),active=kpiActiveOfficers_(model),admins=active.filter(function(x){return x.role===PC_CONST.ROLES.ADMIN;}).length;if(!admins)throw new Error('no Active PRECHECK_ADMIN in PC_Access');return{activeOfficers:active.length,activeAdmins:admins};});
   check('config',function(){var c=kpiGetConfig_(),start=kpiClockMinutes_(c.workdayStart,-1),end=kpiClockMinutes_(c.workdayEnd,-1);if(start<0||end<0||start>=end)throw new Error('invalid working hours start='+String(c.workdayStart)+' end='+String(c.workdayEnd));return kpiPublicConfig_(c);});
   check('handoff-secret',function(){var s=kpiHandoffSecret_();if(s.length<32)throw new Error('handoff secret too short');return{configured:true,length:s.length};});
+  check('transport-security',function(){
+    var directApiBlocked=false,forgedTriggerBlocked=false,oldCtx=KPI_REQUEST_CONTEXT_;
+    try{KPI_REQUEST_CONTEXT_=null;getAdminKpiConfig();}catch(e){directApiBlocked=String(e&&e.message||e).indexOf('KPI_SESSION_REQUIRED')>=0;}
+    finally{KPI_REQUEST_CONTEXT_=oldCtx;}
+    try{kpiRequireOwnedTimeTriggerEvent_({triggerUid:'FORGED'},'kpiReconcileTrigger');}catch(e2){forgedTriggerBlocked=true;}
+    if(!directApiBlocked||!forgedTriggerBlocked)throw new Error('public surface guard self-test failed');
+    return{mode:KPI_SATELLITE.TRANSPORT_MODE,directApiBlocked:directApiBlocked,forgedTriggerBlocked:forgedTriggerBlocked,bootstrapRateLimit:KPI_SATELLITE.BOOTSTRAP_RATE_LIMIT};
+  });
   check('triggers',function(){var h={},missing=[];ScriptApp.getProjectTriggers().forEach(function(t){h[t.getHandlerFunction()]=(h[t.getHandlerFunction()]||0)+1;});['kpiReconcileTrigger','kpiQueueSnapshotTrigger','kpiDailyAggregateTrigger'].forEach(function(k){if(!h[k])missing.push(k);if(h[k]>1)throw new Error('duplicate trigger '+k);});if(missing.length)throw new Error('missing trigger(s): '+missing.join(', '));return h;});
   check('data-health',function(){var h=kpiDataHealth_(kpiLoadModel_({includeAudit:false}));if(h.status!=='HEALTHY')throw new Error('data health '+h.status+'; missingEvents='+h.missingCompletedReviewEvents+'; staleJobs='+h.staleJobRuns);return h;});
   return result;

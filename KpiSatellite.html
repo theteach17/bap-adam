@@ -13,10 +13,33 @@ if(!window.Swal){window.Swal={showLoading:function(){},fire:function(opts){opts=
 <script>
 (function(){
   const p=new URLSearchParams(location.hash.replace(/^#/,'')); window.KPI_CHANNEL=p.get('channel')||''; window.KPI_SESSION_TOKEN='';
+  let handoffTimer=null,authenticated=false;
   function post(type,data){try{window.parent.postMessage(Object.assign({source:'PROJECT_ADAM_KPI_SATELLITE',type:type,channel:window.KPI_CHANNEL},data||{}),'*');}catch(e){}}
   window.satSetStage_=function(text,code,isError){let b=document.getElementById('satStage'),t=document.getElementById('satStageText');t.textContent=text;b.className='sat-stage'+(isError?' sat-error':'');document.getElementById('satRetry').style.display=isError?'inline-block':'none';post('STAGE',{stage:code||'',message:text,error:!!isError});};
-  window.satReady_=function(){satSetStage_('กำลังรอการยืนยันจาก Project Adam...','WAIT_HANDOFF',false);post('READY',{moduleVersion:'1.1.2'});};
-  window.addEventListener('message',function(ev){let d=ev.data||{};if(ev.source!==window.parent||d.source!=='PROJECT_ADAM_MAIN'||d.type!=='HANDOFF'||d.channel!==window.KPI_CHANNEL)return;satSetStage_('ได้รับสิทธิ์จาก Project Adam กำลังตรวจสอบลายเซ็น...','VERIFY_HANDOFF',false);google.script.run.withSuccessHandler(function(r){window.KPI_SESSION_TOKEN=r.sessionToken;satSetStage_('ยืนยัน PRECHECK_ADMIN แล้ว กำลังโหลด Dashboard...','AUTH_OK',false);post('AUTH_OK',{principal:r.principal,expiresAt:r.expiresAt});document.getElementById('satBoot').style.display='none';openKpiDashboard();}).withFailureHandler(function(e){satSetStage_((e&&e.message)||String(e),'AUTH_ERROR',true);post('ERROR',{message:(e&&e.message)||String(e)});}).bootstrapKpiSession(d.ticket);});
+  window.satReady_=function(){
+    if(window.parent===window){
+      satSetStage_('Transport พร้อมใช้งาน — กรุณาเปิด Dashboard จากเมนู Project Adam','DIRECT_ACCESS',false);
+      document.getElementById('satRetry').style.display='none';
+      return;
+    }
+    satSetStage_('เชื่อมต่อ Satellite แล้ว กำลังรอ Secure Handoff จาก Project Adam...','WAIT_HANDOFF',false);
+    post('READY',{moduleVersion:'1.2.0',transportMode:'PUBLIC_SIGNED_HANDOFF'});
+    if(handoffTimer)clearTimeout(handoffTimer);
+    handoffTimer=setTimeout(function(){if(!authenticated)satSetStage_('ไม่ได้รับ Secure Handoff ภายในเวลาที่กำหนด กรุณาปิดแล้วเปิด Dashboard ใหม่','HANDOFF_TIMEOUT',true);},15000);
+  };
+  window.addEventListener('message',function(ev){
+    let d=ev.data||{};
+    if(ev.source!==window.parent||d.source!=='PROJECT_ADAM_MAIN'||d.type!=='HANDOFF'||d.channel!==window.KPI_CHANNEL)return;
+    if(handoffTimer)clearTimeout(handoffTimer);
+    satSetStage_('ได้รับ Secure Handoff แล้ว กำลังตรวจลายเซ็นและสิทธิ์ PRECHECK_ADMIN...','VERIFY_HANDOFF',false);
+    google.script.run.withSuccessHandler(function(r){
+      authenticated=true;window.KPI_SESSION_TOKEN=r.sessionToken;
+      satSetStage_('ยืนยัน PRECHECK_ADMIN แล้ว กำลังโหลด Dashboard...','AUTH_OK',false);
+      post('AUTH_OK',{principal:r.principal,expiresAt:r.expiresAt,moduleVersion:r.moduleVersion});
+      document.getElementById('satBoot').style.display='none';
+      try{openKpiDashboard();}catch(ex){satSetStage_('เปิด Dashboard ไม่สำเร็จ: '+((ex&&ex.message)||String(ex)),'DASHBOARD_BOOT_ERROR',true);post('ERROR',{message:(ex&&ex.message)||String(ex)});}
+    }).withFailureHandler(function(e){satSetStage_((e&&e.message)||String(e),'AUTH_ERROR',true);post('ERROR',{message:(e&&e.message)||String(e)});}).bootstrapKpiSession(d.ticket);
+  });
   window.addEventListener('load',function(){setTimeout(satReady_,80);});
 })();
 </script></body></html>

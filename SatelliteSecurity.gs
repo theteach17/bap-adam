@@ -8,8 +8,24 @@ function kpiHandoffSecret_(){ var secret=PropertiesService.getScriptProperties()
 function kpiNewSecret_(){ var seed=[Utilities.getUuid(),Utilities.getUuid(),Utilities.getUuid(),String(new Date().getTime()),Math.random()].join('|'); return kpiB64uBytes_(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256,seed)); }
 
 /** Manual runner-only secret rotation. Update the matching Script Property in Project Adam immediately afterwards. */
-function rotateKpiHandoffSecret(){ kpiAssertSatelliteRunner_(); var secret=kpiNewSecret_(); PropertiesService.getScriptProperties().setProperty(KPI_SATELLITE.PROP_HANDOFF_SECRET,secret); return {ok:true,secret:secret,warning:'Copy this value to Project Adam Script Property PROJECT_ADAM_KPI_HANDOFF_SECRET before opening the dashboard.'}; }
-function getKpiSatelliteIntegrationInfo(){ kpiAssertSatelliteRunner_(); return {ok:true,moduleVersion:KPI_CONST.VERSION,runner:KPI_SATELLITE.REQUIRED_RUNNER_EMAIL,dbId:kpiSatelliteDbId_(),handoffSecret:kpiHandoffSecret_(),deploymentInstruction:'Deploy as Web app: Execute as Me (budgetservice), access limited to your Workspace domain.'}; }
+function rotateKpiHandoffSecret(){ kpiRequireAdminEditor_(); var secret=kpiNewSecret_(); PropertiesService.getScriptProperties().setProperty(KPI_SATELLITE.PROP_HANDOFF_SECRET,secret); return {ok:true,secret:secret,warning:'Copy this value to Project Adam Script Property PROJECT_ADAM_KPI_HANDOFF_SECRET before opening the dashboard.'}; }
+function getKpiSatelliteIntegrationInfo(){ kpiRequireAdminEditor_(); return {ok:true,moduleVersion:KPI_CONST.VERSION,runner:KPI_SATELLITE.REQUIRED_RUNNER_EMAIL,dbId:kpiSatelliteDbId_(),handoffSecret:kpiHandoffSecret_(),transportMode:KPI_SATELLITE.TRANSPORT_MODE,deploymentInstruction:'Deploy as Web app: Execute as Me (budgetservice) and choose the access option that does not require Google sign-in (ANYONE_ANONYMOUS). Data access remains protected by signed handoff + PC_Access.'}; }
+
+
+
+/** Low-cost abuse control for the public transport endpoint. Authentication still relies on HMAC + PC_Access. */
+function kpiCheckBootstrapRate_(){
+  var temp='';
+  try{temp=String(Session.getTemporaryActiveUserKey()||'');}catch(ignored){temp='';}
+  if(!temp)temp='anonymous';
+  var key='KPI_BOOT_RATE:'+kpiSha256Text_(temp),cache=CacheService.getScriptCache(),lock=LockService.getScriptLock();
+  if(!lock.tryLock(1500)) throw pcUserError_('ระบบกำลังยืนยันสิทธิ์หลายคำขอ กรุณาลองใหม่ในอีกสักครู่','KPI_BOOTSTRAP_BUSY');
+  try{
+    var count=Number(cache.get(key)||0)+1;
+    if(count>KPI_SATELLITE.BOOTSTRAP_RATE_LIMIT) throw pcUserError_('มีคำขอยืนยันสิทธิ์ถี่เกินไป กรุณารอแล้วลองใหม่','KPI_BOOTSTRAP_RATE_LIMIT');
+    cache.put(key,String(count),KPI_SATELLITE.BOOTSTRAP_RATE_WINDOW_SECONDS);
+  }finally{lock.releaseLock();}
+}
 
 function kpiVerifyHandoff_(ticket){
   var parts=String(ticket||'').split('.'); if(parts.length!==2) throw pcUserError_('ข้อมูลเชื่อมต่อ KPI ไม่ถูกต้อง','KPI_HANDOFF_FORMAT');
@@ -34,7 +50,7 @@ function kpiFindActiveAdmin_(email){
 
 /** Called once by the embedded iframe after receiving the signed ticket from Project Adam. */
 function bootstrapKpiSession(ticket){
-  kpiAssertSatelliteRunner_(); var p=kpiVerifyHandoff_(ticket),principal=kpiFindActiveAdmin_(p.email); if(!principal) throw pcUserError_('บัญชีนี้ไม่มีสิทธิ์ PRECHECK_ADMIN ที่ Active','KPI_ADMIN_REQUIRED');
+  kpiAssertSatelliteRunner_(); kpiCheckBootstrapRate_(); var p=kpiVerifyHandoff_(ticket),principal=kpiFindActiveAdmin_(p.email); if(!principal) throw pcUserError_('บัญชีนี้ไม่มีสิทธิ์ PRECHECK_ADMIN ที่ Active','KPI_ADMIN_REQUIRED');
   var raw=[Utilities.getUuid(),Utilities.getUuid(),String(Date.now()),Math.random()].join('|'), token=kpiSha256Text_(raw), sessionId=Utilities.getUuid();
   principal.sessionId=sessionId; principal.issuedAt=kpiNowIso_(); principal.expiresAt=new Date(Date.now()+KPI_SATELLITE.SESSION_TTL_SECONDS*1000).toISOString();
   CacheService.getScriptCache().put('KPI_SESSION:'+kpiSha256Text_(token),JSON.stringify(principal),KPI_SATELLITE.SESSION_TTL_SECONDS);

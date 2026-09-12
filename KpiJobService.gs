@@ -18,7 +18,18 @@ function kpiPruneJobRuns_(){ var lock=LockService.getScriptLock();if(!lock.tryLo
 function kpiLatestJobRuns_(limit){ var rows=kpiReadObjects_(KPI_CONST.SHEETS.JOB_RUNS,KPI_HEADERS.PC_KPIJobRuns),now=Date.now(),staleMs=15*60000; return rows.slice(-Math.max(1,Number(limit)||12)).reverse().map(function(r){var started=new Date(r.StartedAt),status=String(r.Status||''),stale=status==='RUNNING'&&isFinite(started.getTime())&&(now-started.getTime()>staleMs);return{jobRunId:String(r.JobRunId||''),jobType:String(r.JobType||''),triggerType:String(r.TriggerType||''),startedAt:String(r.StartedAt||''),completedAt:String(r.CompletedAt||''),status:status,displayStatus:stale?'STALE':status,stale:stale,stage:String(r.Stage||''),processedCount:Number(r.ProcessedCount||0),addedCount:Number(r.AddedCount||0),updatedCount:Number(r.UpdatedCount||0),prunedCount:Number(r.PrunedCount||0),message:stale?'งานค้างเกิน 15 นาที — ควรตรวจ Execution log':String(r.Message||''),errorCode:String(r.ErrorCode||''),errorMessage:String(r.ErrorMessage||'')};}); }
 function getAdminKpiSystemStatus_(){ requirePrecheckAdmin_(); var health=runKpiHealthCheckCore_(); return {ok:health.ok,moduleVersion:KPI_CONST.VERSION,runner:KPI_SATELLITE.REQUIRED_RUNNER_EMAIL,health:health,jobs:kpiLatestJobRuns_(15)}; }
 
+/** Prevent public google.script.run callers from impersonating time-driven triggers. */
+function kpiRequireOwnedTimeTriggerEvent_(e,expectedHandler){
+  var uid=String(e&&e.triggerUid||'');
+  if(!uid) throw new Error('KPI_TRIGGER_EVENT_REQUIRED');
+  var ok=ScriptApp.getProjectTriggers().some(function(t){
+    return t.getHandlerFunction()===expectedHandler && String(t.getUniqueId())===uid;
+  });
+  if(!ok) throw new Error('KPI_TRIGGER_EVENT_INVALID');
+  return true;
+}
+
 /** Installable trigger entry points. Each job is visible in PC_KPIJobRuns. */
-function kpiReconcileTrigger(){ return kpiRunTrackedJob_('RECONCILE','TRIGGER',runKpiReconcileCore_); }
-function kpiQueueSnapshotTrigger(){ return kpiRunTrackedJob_('QUEUE_SNAPSHOT','TRIGGER',takeKpiQueueSnapshotCore_); }
-function kpiDailyAggregateTrigger(){ return kpiRunTrackedJob_('DAILY_AGGREGATE','TRIGGER',rebuildKpiDailyAggregatesCore_); }
+function kpiReconcileTrigger(e){ kpiRequireOwnedTimeTriggerEvent_(e,'kpiReconcileTrigger'); return kpiRunTrackedJob_('RECONCILE','TRIGGER',runKpiReconcileCore_); }
+function kpiQueueSnapshotTrigger(e){ kpiRequireOwnedTimeTriggerEvent_(e,'kpiQueueSnapshotTrigger'); return kpiRunTrackedJob_('QUEUE_SNAPSHOT','TRIGGER',takeKpiQueueSnapshotCore_); }
+function kpiDailyAggregateTrigger(e){ kpiRequireOwnedTimeTriggerEvent_(e,'kpiDailyAggregateTrigger'); return kpiRunTrackedJob_('DAILY_AGGREGATE','TRIGGER',rebuildKpiDailyAggregatesCore_); }

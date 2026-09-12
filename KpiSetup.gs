@@ -85,4 +85,12 @@ function kpiInstallTriggers_(){
 }
 function installKpiTriggers(){kpiRequireAdminEditor_();return kpiInstallTriggers_();}
 function disableKpiTriggers(){kpiRequireAdminEditor_();return{ok:true,removed:kpiRemoveOwnedTriggers_()};}
-function kpiRequireAdminEditor_(){var effective=kpiAssertSatelliteRunner_();return{email:effective};}
+function kpiRequireAdminEditor_(){
+  var effective=kpiAssertSatelliteRunner_();
+  var active='';
+  try{active=String(Session.getActiveUser().getEmail()||'').trim().toLowerCase();}catch(ignored){active='';}
+  if(active!==KPI_SATELLITE.REQUIRED_RUNNER_EMAIL){
+    throw new Error('KPI_EDITOR_ONLY: this maintenance function must be run manually in the Apps Script editor by '+KPI_SATELLITE.REQUIRED_RUNNER_EMAIL);
+  }
+  return{email:effective,activeEmail:active};
+}

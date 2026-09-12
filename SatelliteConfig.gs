@@ -1,6 +1,6 @@
 /** Standalone runtime configuration for Project Adam KPI Satellite. */
 var KPI_SATELLITE = Object.freeze({
-  VERSION: '1.1.2',
+  VERSION: '1.2.0',
   REQUIRED_RUNNER_EMAIL: 'budgetservice@g.klaeng.ac.th',
   DEFAULT_DB_ID: '16FtFuJUVhdLj8eidgVtjsKThNrlS5ge5NznSU6EVMn0',
   PROP_DB_ID: 'KPI_PRECHECK_DB_ID',
@@ -11,7 +11,10 @@ var KPI_SATELLITE = Object.freeze({
   HANDOFF_MAX_AGE_SECONDS: 180,
   SESSION_TTL_SECONDS: 1800,
   NONCE_TTL_SECONDS: 240,
-  JOB_RETENTION_ROWS: 500
+  JOB_RETENTION_ROWS: 500,
+  TRANSPORT_MODE: 'PUBLIC_SIGNED_HANDOFF',
+  BOOTSTRAP_RATE_LIMIT: 30,
+  BOOTSTRAP_RATE_WINDOW_SECONDS: 300
 });
 
 /** Returns configured Pre-check DB id. */
